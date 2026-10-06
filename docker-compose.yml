@@ -1,0 +1,61 @@
+# EMS - máy chủ (PostgreSQL + Redis + backend): docker compose up -d --build
+# API: http://localhost:8080/api/v1  ·  Swagger: http://localhost:8080/swagger-ui.html
+# Người dùng dùng ứng dụng desktop (desktop/) trỏ tới http://<địa-chỉ-máy-chủ>:8080
+# File tài liệu mặc định lưu trong volume "files". Muốn dùng MinIO (S3): xem cuối file.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ems
+      POSTGRES_USER: ems
+      POSTGRES_PASSWORD: ${EMS_DB_PASSWORD:-ems}
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ems -d ems"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    environment:
+      EMS_DB_URL: jdbc:postgresql://postgres:5432/ems
+      EMS_DB_USER: ems
+      EMS_DB_PASSWORD: ${EMS_DB_PASSWORD:-ems}
+      EMS_JWT_SECRET: ${EMS_JWT_SECRET:-doi-chuoi-nay-khi-trien-khai-that-toi-thieu-32-ky-tu!!}
+      EMS_ADMIN_PASSWORD: ${EMS_ADMIN_PASSWORD:-Admin@12345}
+      EMS_CACHE_TYPE: redis
+      EMS_REDIS_HOST: redis
+      EMS_CACHE_REDIS_HEALTH: "true"
+      EMS_STORAGE_TYPE: local
+      EMS_STORAGE_LOCAL_ROOT: /app/data/files
+      EMS_CORS_ORIGINS: http://localhost:8081,http://localhost:5173
+    ports: ["8080:8080"]
+    volumes: [files:/app/data]
+
+volumes:
+  pgdata:
+  files:
+
+# ---------------------------------------------------------------------------
+# Tuỳ chọn: lưu tài liệu trên MinIO / S3 (image minio/minio trên Docker Hub đã ngừng phát hành).
+# 1) Bỏ comment service dưới đây (hoặc trỏ tới một S3/MinIO có sẵn của tổ chức).
+# 2) Ở service backend đổi: EMS_STORAGE_TYPE: minio, EMS_MINIO_ENDPOINT: http://minio:9000
+#    (EMS_MINIO_ACCESS_KEY / EMS_MINIO_SECRET_KEY nếu khác mặc định minioadmin).
+#
+#  minio:
+#    image: quay.io/minio/minio:latest
+#    command: server /data --console-address ":9001"
+#    environment:
+#      MINIO_ROOT_USER: minioadmin
+#      MINIO_ROOT_PASSWORD: minioadmin
+#    ports: ["9000:9000", "9001:9001"]
+#    volumes: [miniodata:/data]
+# (và thêm "miniodata:" vào mục volumes)

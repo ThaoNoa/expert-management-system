@@ -1,0 +1,82 @@
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+  error:
+    include-message: always
+
+spring:
+  application:
+    name: ems-backend
+  datasource:
+    url: ${EMS_DB_URL:jdbc:postgresql://localhost:5432/ems}
+    username: ${EMS_DB_USER:ems}
+    password: ${EMS_DB_PASSWORD:ems}
+    hikari:
+      maximum-pool-size: ${EMS_DB_POOL:20}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # schema do Flyway quản lý; Hibernate chỉ kiểm tra entity khớp schema
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+        default_batch_fetch_size: 50
+  flyway:
+    enabled: ${EMS_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: ${EMS_MAX_FILE_SIZE:50MB}
+      max-request-size: ${EMS_MAX_FILE_SIZE:50MB}
+  cache:
+    type: ${EMS_CACHE_TYPE:simple}   # redis trong docker-compose
+  data:
+    redis:
+      host: ${EMS_REDIS_HOST:localhost}
+      port: ${EMS_REDIS_PORT:6379}
+  jackson:
+    default-property-inclusion: always
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  health:
+    redis:
+      enabled: ${EMS_CACHE_REDIS_HEALTH:false}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+ems:
+  security:
+    jwt-secret: ${EMS_JWT_SECRET:change-me-change-me-change-me-change-me-change-me-64-bytes!!}
+    access-token-minutes: ${EMS_ACCESS_TOKEN_MINUTES:15}
+    refresh-token-days: ${EMS_REFRESH_TOKEN_DAYS:7}
+    max-failed-logins: 5
+    cors-origins: ${EMS_CORS_ORIGINS:http://localhost:5173}
+  bootstrap:
+    admin-username: ${EMS_ADMIN_USERNAME:admin}
+    admin-password: ${EMS_ADMIN_PASSWORD:Admin@12345}
+    admin-email: ${EMS_ADMIN_EMAIL:admin@ems.local}
+  storage:
+    type: ${EMS_STORAGE_TYPE:local}       # local | minio
+    local-root: ${EMS_STORAGE_LOCAL_ROOT:./data/files}
+    bucket: ${EMS_STORAGE_BUCKET:ems-documents}
+    minio:
+      endpoint: ${EMS_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${EMS_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${EMS_MINIO_SECRET_KEY:minioadmin}
+
+logging:
+  level:
+    com.npcore.ems: INFO

@@ -1,0 +1,22 @@
+# Profile cho integration test. Datasource do AbstractIntegrationTest đặt (@DynamicPropertySource).
+# spring.flyway.enabled để mặc định: build full chạy Flyway trên DB container; build offline không có Flyway.
+spring:
+  cache:
+    type: simple
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+
+ems:
+  storage:
+    type: local
+    local-root: target/test-files
+  bootstrap:
+    admin-username: admin
+    admin-password: Admin@12345
+    admin-email: admin@ems.local
+
+logging:
+  level:
+    com.npcore.ems: INFO
+    org.hibernate.SQL: WARN
