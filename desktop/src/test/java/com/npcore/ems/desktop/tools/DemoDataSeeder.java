@@ -42,6 +42,7 @@ public final class DemoDataSeeder {
     private final Api admin;
     private Api hang;       // NV hồ sơ chuyên gia
     private Api gdcn;       // Giám đốc chứng nhận
+    private Api cgtruong;   // Chuyên gia trưởng – thẩm tra
     private Api vanphong;   // Văn phòng – xác minh tài liệu
 
     private final Map<String, UUID> dept = new HashMap<>();
@@ -73,6 +74,12 @@ public final class DemoDataSeeder {
 
     void run() {
         if (!admin.users("hang", null, 0, 1).content().isEmpty()) {
+            if (admin.users("cgtruong", null, 0, 1).content().isEmpty()) {   // dữ liệu demo cũ: bổ sung Chuyên gia trưởng
+                dept.put("PCN", admin.departments().stream().filter(d -> "PCN".equals(d.departmentCode()))
+                        .map(d -> d.id()).findFirst().orElse(null));
+                user("cgtruong", "Chuyên gia trưởng", "PCN", "Chuyên gia trưởng – VICB.009", "TECHNICAL_REVIEWER");
+                System.out.println("Đã thêm tài khoản cgtruong (Chuyên gia trưởng), mật khẩu " + PASSWORD + ".");
+            }
             System.out.println("Đã có dữ liệu demo (user 'hang' tồn tại) – không nạp lại.");
             return;
         }
@@ -82,6 +89,7 @@ public final class DemoDataSeeder {
         System.out.println();
         System.out.println("XONG. Đăng nhập app để thử (mật khẩu chung: " + PASSWORD + "):");
         System.out.println("  hang      – Nhân viên hồ sơ chuyên gia (Phan Hằng): lập hồ sơ, trình phê duyệt");
+        System.out.println("  cgtruong  – Chuyên gia trưởng: thẩm tra hồ sơ (đạt / trả lại)");
         System.out.println("  gdcn      – Giám đốc chứng nhận: phê duyệt / trả lại, dừng / mở chuyên gia");
         System.out.println("  tpcn      – Trưởng phòng chứng nhận: xem hồ sơ (chỉ đọc)");
         System.out.println("  vanphong  – Văn phòng: nhập thông tin nhân sự, tải lên / xác minh tài liệu");
@@ -172,11 +180,13 @@ public final class DemoDataSeeder {
         // vai trò HEAD_CERTIFICATION có sẵn từ migration V14
         user("hang", "Phan Hằng", "PCN", "Nhân viên hồ sơ – VICB.005", "CERTIFICATION_MANAGER");
         user("gdcn", "Giám đốc chứng nhận", "PCN", "GĐCN – VICB.003", "CERTIFICATION_DIRECTOR");
+        user("cgtruong", "Chuyên gia trưởng", "PCN", "Chuyên gia trưởng – VICB.009", "TECHNICAL_REVIEWER");
         user("tpcn", "Trưởng phòng chứng nhận", "PCN", "Trưởng phòng – VICB.174", "HEAD_CERTIFICATION");
         user("vanphong", "Nhân viên văn phòng", "VP", "Văn phòng", "DOCUMENT_CONTROLLER");
         user("an.nv", "Nguyễn Văn An", "PCN", "Chuyên gia đánh giá", "EXPERT");
         hang = login("hang", PASSWORD);
         gdcn = login("gdcn", PASSWORD);
+        cgtruong = login("cgtruong", PASSWORD);
         vanphong = login("vanphong", PASSWORD);
     }
 
@@ -256,7 +266,7 @@ public final class DemoDataSeeder {
         approve(phong);
         gdcn.changeExpertStatus(phong, "DEACTIVATE", "Nghỉ hưu, không tiếp tục cộng tác", null);
 
-        // 7–8. Chờ GĐCN phê duyệt
+        // 7. Chờ Chuyên gia trưởng thẩm tra;  8. Đã thẩm tra, chờ GĐCN phê duyệt
         UUID giang = expert("Đặng Thu Giang", "1992-03-08", "FEMALE", "0965 432 100", "AUDITOR", "FULLTIME", "PCN", "Hà Nội",
                 "Chuyên gia đánh giá", null,
                 new String[] {"MASTER", "QTKD", "Quản trị kinh doanh", "ĐH Kinh tế Quốc dân", "2016"},
@@ -271,15 +281,16 @@ public final class DemoDataSeeder {
                 List.of(new Exp("Sản xuất hóa chất", "HC", "Quản đốc", "Công ty Hóa chất Miền Nam", "2006-08-01", null, "12", "13", "14")),
                 List.of(), Map.of("vi", "NATIVE", "en", "BASIC"));
         hang.changeExpertStatus(hai, "SUBMIT", null, null);
+        cgtruong.changeExpertStatus(hai, "REVIEW", "Đủ năng lực TE cho code 12, 13, 14", null);
 
-        // 9. Bị GĐCN trả lại, yêu cầu bổ sung
+        // 9. Bị Chuyên gia trưởng trả lại, yêu cầu bổ sung
         UUID lan = expert("Ngô Thị Lan", "1991-07-27", "FEMALE", "0946 888 123", "AUDITOR", "FULLTIME", "PCN", "Cần Thơ",
                 "Chuyên gia đánh giá", null,
                 new String[] {"BACHELOR", "CNTP", "Công nghệ thực phẩm", "ĐH Cần Thơ", "2013"},
                 List.of(new Exp("Kiểm soát chất lượng", "TP", "Nhân viên QC", "Công ty Thủy sản Cửu Long", "2013-10-01", null, "03", "01")),
                 List.of(), Map.of("vi", "NATIVE"));
         hang.changeExpertStatus(lan, "SUBMIT", null, null);
-        gdcn.changeExpertStatus(lan, "RETURN",
+        cgtruong.changeExpertStatus(lan, "RETURN",
                 "Bổ sung chứng chỉ đánh giá viên ISO 22000 và xác nhận kinh nghiệm của đơn vị công tác", null);
 
         // 10. Hồ sơ nháp chưa đủ (chưa có kinh nghiệm)
@@ -328,6 +339,7 @@ public final class DemoDataSeeder {
 
     private void approve(UUID expertId) {
         hang.changeExpertStatus(expertId, "SUBMIT", "Đủ hồ sơ theo BM F01-08-04", null);
+        cgtruong.changeExpertStatus(expertId, "REVIEW", "Đạt", null);
         gdcn.changeExpertStatus(expertId, "APPROVE", "Đồng ý", null);
     }
 

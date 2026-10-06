@@ -109,14 +109,19 @@ public final class ExpertDetailView extends BorderPane {
         return new Tab(title, content);
     }
 
-    /** Năng lực (học vấn, kinh nghiệm, code, đào tạo, chứng chỉ, ngoại ngữ) – NV hồ sơ. Khoá khi đã trình GĐCN. */
+    /** Đã trình: đang chờ thẩm tra hoặc chờ GĐCN phê duyệt → khoá sửa. */
+    private boolean locked() {
+        return "SUBMITTED".equals(expert.status()) || "REVIEWED".equals(expert.status());
+    }
+
+    /** Năng lực (học vấn, kinh nghiệm, code, đào tạo, chứng chỉ, ngoại ngữ) – NV hồ sơ. Khoá khi đã trình. */
     private boolean canEdit() {
-        return session.has("EXPERT_COMPETENCY_EDIT") && !"SUBMITTED".equals(expert.status());
+        return session.has("EXPERT_COMPETENCY_EDIT") && !locked();
     }
 
     /** Thông tin chung / nhân sự – Văn phòng, NV hồ sơ. */
     private boolean canEditGeneral() {
-        return session.has("EXPERT_EDIT") && !"SUBMITTED".equals(expert.status());
+        return session.has("EXPERT_EDIT") && !locked();
     }
 
     /** Chuyên gia tự sửa liên hệ của mình. */
@@ -140,7 +145,7 @@ public final class ExpertDetailView extends BorderPane {
         for (String action : expert.availableActions()) {
             Button b = switch (action) {
                 case "SUSPEND", "DEACTIVATE", "RETURN" -> Ui.danger(Fmt.label(action), () -> changeStatus(action));
-                case "SUBMIT", "APPROVE" -> Ui.primary(Fmt.label(action), () -> changeStatus(action));
+                case "SUBMIT", "REVIEW", "APPROVE" -> Ui.primary(Fmt.label(action), () -> changeStatus(action));
                 default -> Ui.button(Fmt.label(action), () -> changeStatus(action));
             };
             actions.getChildren().add(b);
@@ -155,8 +160,10 @@ public final class ExpertDetailView extends BorderPane {
     private Label banner() {
         String reason = expert.statusReason();
         String text = switch (expert.status()) {
-            case "DRAFT" -> reason == null ? null : "GĐCN trả lại, yêu cầu bổ sung: " + reason;
-            case "SUBMITTED" -> "Đã trình – đang chờ GĐCN phê duyệt. Hồ sơ tạm khoá sửa.";
+            case "DRAFT" -> reason == null ? null : "Bị trả lại, yêu cầu bổ sung: " + reason;
+            case "SUBMITTED" -> "Đã trình – đang chờ Chuyên gia trưởng thẩm tra. Hồ sơ tạm khoá sửa.";
+            case "REVIEWED" -> "Chuyên gia trưởng đã thẩm tra đạt – chờ GĐCN phê duyệt. Hồ sơ tạm khoá sửa."
+                    + (reason == null ? "" : "\nGhi chú thẩm tra: " + reason);
             case "SUSPENDED" -> (expert.suspendedUntil() == null ? "Dừng đánh giá tới khi GĐCN mở lại"
                     : "Dừng đánh giá đến hết " + Fmt.date(expert.suspendedUntil()) + " (tự mở lại sau ngày này)")
                     + (reason == null ? "" : ". Lý do: " + reason.replaceAll("\\s*\\(dừng đến hết [^)]*\\)$", ""));
@@ -173,12 +180,13 @@ public final class ExpertDetailView extends BorderPane {
 
     private void changeStatus(String action) {
         boolean required = switch (action) {
-            case "SUBMIT", "APPROVE" -> false;
+            case "SUBMIT", "REVIEW", "APPROVE" -> false;
             default -> true;
         };
         String label = switch (action) {
             case "RETURN" -> "Nội dung cần bổ sung / lý do trả lại";
-            case "SUBMIT" -> "Ghi chú gửi GĐCN";
+            case "SUBMIT" -> "Ghi chú gửi Chuyên gia trưởng";
+            case "REVIEW" -> "Ghi chú thẩm tra (gửi GĐCN)";
             case "APPROVE" -> "Ý kiến phê duyệt";
             default -> "Lý do";
         };
@@ -188,8 +196,10 @@ public final class ExpertDetailView extends BorderPane {
                     .note("Để trống = dừng tới khi GĐCN mở lại. Có ngày: hết ngày đó hệ thống tự mở lại. "
                             + "Chuyên gia đang dừng sẽ không được chọn vào đoàn đánh giá.");
         }
+        if ("REVIEW".equals(action)) f.note("Thẩm tra đạt: hồ sơ chuyển GĐCN phê duyệt kèm ghi chú này. "
+                + "Nếu chưa đạt, dùng nút \"Trả lại / yêu cầu bổ sung\" và ghi rõ nội dung cần bổ sung.");
         if ("SUBMIT".equals(action)) f.note("Hồ sơ cần có ngày sinh, số điện thoại, ít nhất 1 học vấn và 1 kinh nghiệm. "
-                + "Sau khi trình, hồ sơ bị khoá sửa tới khi GĐCN phê duyệt hoặc trả lại.");
+                + "Sau khi trình, hồ sơ bị khoá sửa trong lúc Chuyên gia trưởng thẩm tra và GĐCN phê duyệt.");
         f.showDialog(Fmt.label(action) + " – " + expert.expertCode() + " · " + expert.fullName(), Fmt.label(action),
                 () -> api.changeExpertStatus(expert.id(), action, f.str("comment"),
                         "SUSPEND".equals(action) ? f.date("until") : null),
@@ -472,7 +482,7 @@ public final class ExpertDetailView extends BorderPane {
     private Node documents() {
         ExpertDocumentsPane pane = new ExpertDocumentsPane(session, lookups, expert.id());
         pane.showExpert(expert.id(), expert.expertCode() + " · " + expert.fullName());
-        pane.setEditable(!"SUBMITTED".equals(expert.status()));
+        pane.setEditable(!locked());
         pane.setPadding(new Insets(12));
         return pane;
     }

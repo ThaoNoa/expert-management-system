@@ -21,7 +21,7 @@ public class ExpertAccess {
         return require(expertId, "EXPERT_VIEW");
     }
 
-    /** Thông tin chung / nhân sự (Văn phòng, NV hồ sơ). Hồ sơ đã trình GĐCN thì khoá sửa. */
+    /** Thông tin chung / nhân sự (Văn phòng, NV hồ sơ). Hồ sơ đã trình (chờ thẩm tra / phê duyệt) thì khoá sửa. */
     public Expert requireEdit(UUID expertId) {
         return unlocked(require(expertId, "EXPERT_EDIT"));
     }
@@ -37,8 +37,8 @@ public class ExpertAccess {
     }
 
     private static Expert unlocked(Expert e) {
-        if ("SUBMITTED".equals(e.getStatus())) {
-            throw ApiException.businessRule("Hồ sơ đang chờ GĐCN phê duyệt – không sửa được cho tới khi được phê duyệt hoặc trả lại");
+        if ("SUBMITTED".equals(e.getStatus()) || "REVIEWED".equals(e.getStatus())) {
+            throw ApiException.businessRule("Hồ sơ đã trình, đang thẩm tra / chờ phê duyệt – không sửa được cho tới khi được phê duyệt hoặc trả lại");
         }
         return e;
     }

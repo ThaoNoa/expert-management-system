@@ -29,11 +29,14 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
     private TestUser manager;
     /** CERTIFICATION_DIRECTOR: EXPERT_APPROVE, EXPERT_SUSPEND. */
     private TestUser director;
+    /** TECHNICAL_REVIEWER = Chuyên gia trưởng: EXPERT_REVIEW. */
+    private TestUser reviewer;
 
     @BeforeEach
     void setUp() {
         manager = createUserWithRoles("CERTIFICATION_MANAGER");
         director = createUserWithRoles("CERTIFICATION_DIRECTOR");
+        reviewer = createUserWithRoles("TECHNICAL_REVIEWER");
     }
 
     private String expertId(JsonNode e) {
@@ -139,11 +142,15 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         assertThat(texts(submitted.path("availableActions"))).isEmpty();                      // NV hồ sơ không duyệt
         expectError(put("/experts/" + id, manager.token(), expertBody("Sửa khi chờ", "FULLTIME", null)),
                 HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");                            // khoá khi chờ duyệt
-        expectError(post(path, manager.token(), Map.of("action", "APPROVE")), HttpStatus.FORBIDDEN, "FORBIDDEN");
-        assertThat(texts(getJson("/experts/" + id, director.token()).path("availableActions")))
-                .containsExactlyInAnyOrder("APPROVE", "RETURN");
-        expectError(post(path, director.token(), Map.of("action", "RETURN")), HttpStatus.BAD_REQUEST, "VALIDATION_ERROR");
-        JsonNode returned = postJson(path, director.token(), Map.of("action", "RETURN", "comment", "Bổ sung bằng cấp"), HttpStatus.OK);
+        // Chưa thẩm tra thì GĐCN chưa phê duyệt được
+        expectError(post(path, director.token(), Map.of("action", "APPROVE")), HttpStatus.CONFLICT, "ILLEGAL_TRANSITION");
+        assertThat(texts(getJson("/experts/" + id, director.token()).path("availableActions"))).isEmpty();
+        // Chuyên gia trưởng thẩm tra: trả lại (bắt buộc ghi chú)
+        expectError(post(path, manager.token(), Map.of("action", "REVIEW")), HttpStatus.FORBIDDEN, "FORBIDDEN");
+        assertThat(texts(getJson("/experts/" + id, reviewer.token()).path("availableActions")))
+                .containsExactlyInAnyOrder("REVIEW", "RETURN");
+        expectError(post(path, reviewer.token(), Map.of("action", "RETURN")), HttpStatus.BAD_REQUEST, "VALIDATION_ERROR");
+        JsonNode returned = postJson(path, reviewer.token(), Map.of("action", "RETURN", "comment", "Bổ sung bằng cấp"), HttpStatus.OK);
         assertThat(returned.path("status").asText()).isEqualTo("DRAFT");
         assertThat(returned.path("statusReason").asText()).isEqualTo("Bổ sung bằng cấp");
         Map<String, Object> fix = expertBody(e.path("fullName").asText(), "FULLTIME", null);
@@ -151,6 +158,15 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         fix.put("address", "Bổ sung theo yêu cầu GĐCN");
         putJson("/experts/" + id, manager.token(), fix);
         postJson(path, manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        // thẩm tra đạt kèm ghi chú → chờ GĐCN; vẫn khoá sửa
+        JsonNode reviewed = postJson(path, reviewer.token(), Map.of("action", "REVIEW", "comment", "Đủ năng lực code 17, 18"), HttpStatus.OK);
+        assertThat(reviewed.path("status").asText()).isEqualTo("REVIEWED");
+        assertThat(reviewed.path("statusReason").asText()).isEqualTo("Đủ năng lực code 17, 18");
+        expectError(post("/experts/" + id + "/educations", manager.token(), Map.of("degreeLevelCode", "MASTER", "institution", "X")),
+                HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");
+        expectError(post(path, reviewer.token(), Map.of("action", "APPROVE")), HttpStatus.FORBIDDEN, "FORBIDDEN");   // CG trưởng không phê duyệt
+        assertThat(texts(getJson("/experts/" + id, director.token()).path("availableActions")))
+                .containsExactlyInAnyOrder("APPROVE", "RETURN");
         JsonNode active = postJson(path, director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
         assertThat(active.path("status").asText()).isEqualTo("ACTIVE");
         assertThat(texts(active.path("availableActions"))).containsExactlyInAnyOrder("SUSPEND", "DEACTIVATE");
@@ -170,7 +186,7 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         JsonNode history = getJson("/experts/" + id + "/history", manager.token());
         List<String> actions = new ArrayList<>();
         history.forEach(h -> actions.add(h.path("action").asText()));
-        assertThat(actions).contains("SUBMIT", "RETURN", "APPROVE", "SUSPEND", "REINSTATE", "CREATE");
+        assertThat(actions).contains("SUBMIT", "RETURN", "REVIEW", "APPROVE", "SUSPEND", "REINSTATE", "CREATE");
         assertThat(actions.indexOf("REINSTATE")).isLessThan(actions.indexOf("SUSPEND"));     // mới nhất trước
         JsonNode suspendEntry = null;
         for (JsonNode h : history) if (h.path("action").asText().equals("SUSPEND")) suspendEntry = h;
@@ -338,13 +354,15 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void submitterCannotApproveOwnSubmission() {
-        // một người kiêm cả NV hồ sơ và GĐCN: trình được nhưng không tự phê duyệt hồ sơ mình trình (SoD)
-        TestUser both = createUserWithRoles("CERTIFICATION_MANAGER", "CERTIFICATION_DIRECTOR");
-        JsonNode e = createExpert(both.token(), "SoD " + uniq(""), "FULLTIME", null);
-        completeProfile(expertId(e), both.token());
+        // một người kiêm nhiều vai trò: trình được nhưng không tự thẩm tra / tự phê duyệt hồ sơ mình trình (SoD)
+        TestUser all = createUserWithRoles("CERTIFICATION_MANAGER", "TECHNICAL_REVIEWER", "CERTIFICATION_DIRECTOR");
+        JsonNode e = createExpert(all.token(), "SoD " + uniq(""), "FULLTIME", null);
+        completeProfile(expertId(e), all.token());
         String path = "/experts/" + expertId(e) + "/status";
-        postJson(path, both.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
-        expectError(post(path, both.token(), Map.of("action", "APPROVE")), HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");
+        postJson(path, all.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        expectError(post(path, all.token(), Map.of("action", "REVIEW")), HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");
+        postJson(path, reviewer.token(), Map.of("action", "REVIEW"), HttpStatus.OK);
+        expectError(post(path, all.token(), Map.of("action", "APPROVE")), HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");
         postJson(path, director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
     }
 
@@ -370,6 +388,7 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         // NV hồ sơ: nhập năng lực rồi trình
         completeProfile(id, manager.token());
         postJson("/experts/" + id + "/status", manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        postJson("/experts/" + id + "/status", reviewer.token(), Map.of("action", "REVIEW"), HttpStatus.OK);
 
         // GĐCN: chỉ duyệt, không sửa nội dung
         expectError(put("/experts/" + id, director.token(), hr), HttpStatus.FORBIDDEN, "FORBIDDEN");
@@ -392,6 +411,7 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         String path = "/experts/" + id + "/status";
         completeProfile(id, manager.token());
         postJson(path, manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        postJson(path, reviewer.token(), Map.of("action", "REVIEW"), HttpStatus.OK);
         postJson(path, director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
 
         String until = LocalDate.now().plusDays(30).toString();

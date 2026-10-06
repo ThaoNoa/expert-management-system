@@ -35,8 +35,8 @@ docker compose up -d --build
 > SUPER_ADMIN **không** tạo chuyên gia hay phê duyệt. Hãy tạo user với role `CERTIFICATION_MANAGER` (lập hồ sơ),
 > `DOCUMENT_CONTROLLER` (tài liệu), `CERTIFICATION_DIRECTOR` (GĐCN: phê duyệt / trả lại hồ sơ, dừng / mở chuyên gia).
 >
-> Quy trình hồ sơ năng lực: **NV hồ sơ lập hồ sơ → Trình phê duyệt → GĐCN Phê duyệt** (Đang hoạt động) hoặc
-> **Trả lại / yêu cầu bổ sung** (về Nháp, kèm nội dung). GĐCN có thể **dừng đánh giá có thời hạn**; hết hạn hệ thống tự mở lại.
+> Quy trình hồ sơ năng lực: **NV hồ sơ lập hồ sơ → Trình → Chuyên gia trưởng thẩm tra** (đạt kèm ghi chú / trả lại)
+> **→ GĐCN Phê duyệt** (Đang hoạt động) hoặc **Trả lại / yêu cầu bổ sung** (về Nháp, kèm nội dung). GĐCN có thể **dừng đánh giá có thời hạn**; hết hạn hệ thống tự mở lại.
 
 ## 2. Ứng dụng desktop
 

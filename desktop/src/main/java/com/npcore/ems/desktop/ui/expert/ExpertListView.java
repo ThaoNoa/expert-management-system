@@ -23,7 +23,7 @@ public final class ExpertListView extends VBox {
     private final TextField q = new TextField();
     private final ComboBox<Option<String>> type = combo("Loại chuyên gia", "AUDITOR", "TECHNICAL_EXPERT");
     private final ComboBox<Option<String>> employment = combo("Hình thức", "FULLTIME", "PARTTIME");
-    private final ComboBox<Option<String>> status = combo("Trạng thái", "DRAFT", "SUBMITTED", "ACTIVE", "SUSPENDED", "INACTIVE");
+    private final ComboBox<Option<String>> status = combo("Trạng thái", "DRAFT", "SUBMITTED", "REVIEWED", "ACTIVE", "SUSPENDED", "INACTIVE");
 
     public ExpertListView(Session session, Navigator nav) {
         this(session, nav, null, "Danh sách chuyên gia");

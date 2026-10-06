@@ -79,9 +79,9 @@ public final class DocumentListView extends BorderPane {
                 docs.showExpert(null);
             } else {
                 heading.setText(e.fullName() + "  ·  " + e.expertCode());
-                boolean locked = "SUBMITTED".equals(e.status());
+                boolean locked = "SUBMITTED".equals(e.status()) || "REVIEWED".equals(e.status());
                 subHeading.setText(Fmt.label(e.expertType()) + " · " + Fmt.label(e.status())
-                        + (locked ? " – hồ sơ đang chờ GĐCN phê duyệt nên tạm khoá tải lên" : ""));
+                        + (locked ? " – hồ sơ đã trình (thẩm tra / phê duyệt) nên tạm khoá tải lên" : ""));
                 docs.setEditable(!locked);
                 docs.showExpert(e.id(), e.expertCode() + " · " + e.fullName());
             }

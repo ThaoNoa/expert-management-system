@@ -157,7 +157,8 @@ public class ExpertService {
 
     /**
      * Chuyển trạng thái theo workflow EXPERT (cấu hình trong DB, trigger DB kiểm tra lại).
-     * SUBMIT: NV hồ sơ trình duyệt (hồ sơ phải đủ tối thiểu). APPROVE / RETURN: GĐCN.
+     * SUBMIT: NV hồ sơ trình (hồ sơ phải đủ tối thiểu). REVIEW / RETURN: Chuyên gia trưởng thẩm tra.
+     * APPROVE / RETURN: GĐCN. Người trình không tự thẩm tra / tự phê duyệt.
      * SUSPEND có thể kèm suspendedUntil (ngày cuối bị dừng) – hết hạn hệ thống tự mở lại.
      */
     @Transactional
@@ -172,7 +173,7 @@ public class ExpertService {
             if (!suspendedUntil.isAfter(LocalDate.now())) throw ApiException.badRequest("Ngày dừng đến phải sau hôm nay");
         }
         Map<String, UUID> actors = new HashMap<>();
-        if ("APPROVE".equals(action)) {
+        if ("APPROVE".equals(action) || "REVIEW".equals(action)) {
             workflow.history("EXPERT", id).stream().filter(h -> "SUBMIT".equals(h.getAction())).findFirst()
                     .ifPresent(h -> actors.put("SUBMITTER", h.getActorId()));
         }
