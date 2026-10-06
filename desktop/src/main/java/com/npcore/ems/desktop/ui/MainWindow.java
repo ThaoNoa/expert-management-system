@@ -15,6 +15,8 @@ import com.npcore.ems.desktop.ui.fx.Form;
 import com.npcore.ems.desktop.ui.master.CatalogViews;
 import com.npcore.ems.desktop.ui.master.CodeSetsView;
 import com.npcore.ems.desktop.ui.master.StandardsView;
+import com.npcore.ems.desktop.ui.competency.CompetencyDefinitionsView;
+import com.npcore.ems.desktop.ui.competency.CompetencyMatrixView;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javafx.geometry.Insets;
@@ -99,6 +101,13 @@ public final class MainWindow extends BorderPane implements Navigator {
         if (session.hasAny("DOCUMENT_MANAGE", "DOCUMENT_VERIFY")) {
             root.getChildren().add(leaf("documents", "Tài liệu", () -> new DocumentListView(session)));
         }
+
+        TreeItem<Nav> compGroup = group("Năng lực");
+        compGroup.getChildren().add(leaf("competency-matrix", "Ma trận năng lực", () -> new CompetencyMatrixView(session, this)));
+        if (session.has("MASTER_DATA_MANAGE")) {
+            compGroup.getChildren().add(leaf("competency-definitions", "Định nghĩa năng lực", () -> new CompetencyDefinitionsView(session)));
+        }
+        addIfAny(root, compGroup);
 
         TreeItem<Nav> master = group("Danh mục");
         master.getChildren().addAll(

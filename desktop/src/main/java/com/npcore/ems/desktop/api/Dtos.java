@@ -162,4 +162,43 @@ public final class Dtos {
                            String ipAddress) {}
 
     public record Setting(String key, JsonNode value, String valueType, String category, String description) {}
+
+    // ---------------- Competency
+    public record CompetencyDefinition(UUID id, UUID schemeId, String schemeCode, String schemeName,
+                                      UUID standardId, String standardCode, String standardName,
+                                      UUID codeId, String codeValue, String codeName,
+                                      UUID assessmentRoleId, String roleCode, String roleName,
+                                      Short defaultValidityMonths, LocalDate effectiveFrom, LocalDate effectiveTo,
+                                      String version, String status, JsonNode criteria) {}
+
+    public record CompetencyDefinitionRequest(UUID schemeId, UUID standardId, UUID codeId, UUID assessmentRoleId,
+                                             Short defaultValidityMonths, LocalDate effectiveFrom, LocalDate effectiveTo,
+                                             String version, String status, JsonNode criteria) {}
+
+    public record Evidence(UUID id, UUID expertCompetencyId, UUID documentId, String evidenceType,
+                           String sourceObjectType, UUID sourceObjectId, String description,
+                           OffsetDateTime createdAt) {}
+
+    public record EvidenceRequest(UUID documentId, String evidenceType, String sourceObjectType,
+                                 UUID sourceObjectId, String description) {}
+
+    public record ExpertCompetency(UUID id, UUID expertId, CompetencyDefinition definition, UUID standardVersionId,
+                                  String competencyLevel, String status, int revisionNo, LocalDate effectiveFrom,
+                                  LocalDate effectiveTo, LocalDate firstApprovedDate, UUID approvedBy,
+                                  OffsetDateTime approvedAt, UUID submittedBy, OffsetDateTime submittedAt,
+                                  String notes, OffsetDateTime createdAt, List<String> availableActions,
+                                  List<Evidence> evidences) {}
+
+    public record ExpertCompetencyRequest(UUID competencyDefinitionId, UUID standardId, UUID codeId,
+                                         UUID assessmentRoleId, UUID standardVersionId, String competencyLevel,
+                                         LocalDate effectiveFrom, LocalDate effectiveTo, String notes) {}
+
+    public record CompetencyActionRequest(String action, String comment) {}
+
+    public record MatrixCell(UUID competencyId, UUID definitionId, String standardCode, String codeValue,
+                            String roleCode, String level, String status, LocalDate effectiveFrom,
+                            LocalDate effectiveTo) {}
+
+    public record MatrixRow(UUID expertId, String expertCode, String expertName, String expertType,
+                            String employmentType, List<MatrixCell> cells) {}
 }

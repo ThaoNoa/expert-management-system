@@ -4,6 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.npcore.ems.desktop.api.Api;
 import com.npcore.ems.desktop.api.Dtos.Certificate;
 import com.npcore.ems.desktop.api.Dtos.CertificateRequest;
+import com.npcore.ems.desktop.api.Dtos.CompetencyDefinition;
+import com.npcore.ems.desktop.api.Dtos.EvidenceRequest;
+import com.npcore.ems.desktop.api.Dtos.ExpertCompetency;
+import com.npcore.ems.desktop.api.Dtos.ExpertCompetencyRequest;
 import com.npcore.ems.desktop.api.Dtos.DocumentSummary;
 import com.npcore.ems.desktop.api.Dtos.Education;
 import com.npcore.ems.desktop.api.Dtos.EducationRequest;
@@ -90,6 +94,7 @@ public final class ExpertDetailView extends BorderPane {
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabs.getTabs().addAll(
                 tab("Thông tin chung", general()),
+                tab("Năng lực", competencies()),
                 tab("Học vấn (" + expert.counts().educations() + ")", educations()),
                 tab("Kinh nghiệm (" + expert.counts().experiences() + ")", experiences()),
                 tab("Đào tạo (" + expert.counts().trainings() + ")", trainings()),
@@ -419,6 +424,161 @@ public final class ExpertDetailView extends BorderPane {
         box.getChildren().addAll(table, Ui.hint("Nhấp đúp để xem các phiên bản, tải về, xác minh."));
         reload.run();
         return box;
+    }
+
+    private Node competencies() {
+        TableView<ExpertCompetency> table = Tables.table("Chuyên gia chưa đăng ký năng lực nào");
+        table.getColumns().addAll(List.of(
+                Tables.col("Tiêu chuẩn", c -> c.definition().standardCode(), 120),
+                Tables.col("Mã Code", c -> c.definition().codeValue() == null ? "(Toàn tiêu chuẩn)" : c.definition().codeValue(), 130),
+                Tables.col("Vai trò", c -> c.definition().roleCode(), 90),
+                Tables.col("Cấp độ", c -> Fmt.label(c.competencyLevel()), 110),
+                Tables.status("Trạng thái", ExpertCompetency::status, 130),
+                Tables.col("Hiệu lực từ", c -> Fmt.date(c.effectiveFrom()), 100),
+                Tables.col("Hiệu lực đến", c -> Fmt.date(c.effectiveTo()), 100),
+                Tables.col("Duyệt lần đầu", c -> Fmt.date(c.firstApprovedDate()), 110),
+                Tables.col("Minh chứng", c -> c.evidences() == null ? "0" : String.valueOf(c.evidences().size()), 90),
+                Tables.col("Ghi chú", ExpertCompetency::notes, 180)));
+
+        Runnable loader = () -> Async.run(this, () -> api.expertCompetencies(expert.id(), null, 0, 100), page -> {
+            table.getItems().setAll(page.content());
+        });
+
+        HBox bar = Ui.toolbar(Ui.button("Tải lại", loader), Ui.spacer());
+
+        if (canEdit()) {
+            Button add = Ui.primary("+ Đăng ký năng lực", () -> openAddCompetencyDialog(loader));
+            bar.getChildren().add(add);
+        }
+
+        HBox actionsBar = new HBox(8);
+        actionsBar.setAlignment(Pos.CENTER_LEFT);
+        table.getSelectionModel().selectedItemProperty().addListener((o, a, sel) -> {
+            actionsBar.getChildren().clear();
+            if (sel != null && sel.availableActions() != null) {
+                for (String act : sel.availableActions()) {
+                    Button b = "REVOKE".equals(act) || "SUSPEND".equals(act) || "RETURN".equals(act)
+                            ? Ui.danger(Fmt.label(act), () -> runCompetencyAction(sel, act, loader))
+                            : Ui.button(Fmt.label(act), () -> runCompetencyAction(sel, act, loader));
+                    actionsBar.getChildren().add(b);
+                }
+                if (List.of("DRAFT", "NEED_REVISION").contains(sel.status()) && canEdit()) {
+                    Button addEv = Ui.button("+ Thêm minh chứng", () -> openAddEvidenceDialog(sel, loader));
+                    actionsBar.getChildren().add(addEv);
+                }
+            }
+        });
+
+        VBox box = new VBox(10, bar, actionsBar, table);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(table, Priority.ALWAYS);
+        loader.run();
+        return box;
+    }
+
+    private void openAddCompetencyDialog(Runnable onDone) {
+        Async.run(this, () -> {
+            var stList = api.list("standards", new TypeReference<List<com.npcore.ems.desktop.api.Dtos.Standard>>() {});
+            var cdList = api.list("codes", new TypeReference<List<com.npcore.ems.desktop.api.Dtos.Code>>() {});
+            var roList = api.list("assessment-roles", new TypeReference<List<com.npcore.ems.desktop.api.Dtos.AssessmentRole>>() {});
+            return new Object[] {stList, cdList, roList};
+        }, r -> {
+            var stList = (List<com.npcore.ems.desktop.api.Dtos.Standard>) r[0];
+            var cdList = (List<com.npcore.ems.desktop.api.Dtos.Code>) r[1];
+            var roList = (List<com.npcore.ems.desktop.api.Dtos.AssessmentRole>) r[2];
+
+            if (stList.isEmpty()) {
+                Dialogs.info("Chưa có Tiêu chuẩn nào trong hệ thống");
+                return;
+            }
+
+            List<Option<UUID>> stdOptions = stList.stream()
+                    .map(s -> new Option<>(s.id(), s.standardCode() + " · " + s.standardName())).toList();
+
+            List<Option<UUID>> codeOptions = new ArrayList<>();
+            codeOptions.add(new Option<>(null, "— Toàn tiêu chuẩn (Áp dụng chung / LA) —"));
+            for (var c : cdList) {
+                codeOptions.add(new Option<>(c.id(), "Code " + c.codeValue() + " · " + c.codeName()));
+            }
+
+            List<Option<UUID>> roleOptions = roList.stream()
+                    .map(ro -> new Option<>(ro.id(), ro.roleCode() + " · " + ro.roleName())).toList();
+
+            List<Option<String>> levelOptions = List.of(
+                    new Option<>("QUALIFIED", "Đạt chuẩn (Qualified)"),
+                    new Option<>("IN_TRAINING", "Đang đào tạo (In Training)"),
+                    new Option<>("SENIOR", "Chuyên gia cao cấp (Senior)")
+            );
+
+            Form f = new Form()
+                    .choice("std", "Tiêu chuẩn đánh giá", stdOptions, true)
+                    .choice("code", "Mã ngành / Lĩnh vực (Code)", codeOptions, false)
+                    .choice("role", "Vai trò trong đoàn", roleOptions, true)
+                    .choice("level", "Cấp độ năng lực", levelOptions, true)
+                    .date("from", "Hiệu lực từ", false)
+                    .date("to", "Hiệu lực đến", false)
+                    .area("notes", "Ghi chú", false);
+
+            f.set("level", "QUALIFIED");
+            if (!stdOptions.isEmpty()) f.set("std", stdOptions.get(0).value());
+            if (!roleOptions.isEmpty()) f.set("role", roleOptions.get(0).value());
+
+            f.showDialog("Đăng ký năng lực chuyên gia", "Lưu dự thảo", () -> {
+                ExpertCompetencyRequest req = new ExpertCompetencyRequest(
+                        null,
+                        f.value("std"),
+                        f.value("code"),
+                        f.value("role"),
+                        null,
+                        f.value("level"),
+                        f.date("from"),
+                        f.date("to"),
+                        f.str("notes")
+                );
+                api.addExpertCompetency(expert.id(), req);
+                return Boolean.TRUE;
+            }, ok -> onDone.run());
+        });
+    }
+
+    private void runCompetencyAction(ExpertCompetency sel, String action, Runnable onDone) {
+        boolean needComment = List.of("RETURN", "REVOKE", "SUSPEND", "REJECT").contains(action);
+        Dialogs.askText(Fmt.label(action) + " năng lực", "Ghi chú / lý do", needComment).ifPresent(comment -> {
+            Async.run(this, () -> api.transitionExpertCompetency(expert.id(), sel.id(), action, comment.isBlank() ? null : comment),
+                    res -> onDone.run());
+        });
+    }
+
+    private void openAddEvidenceDialog(ExpertCompetency sel, Runnable onDone) {
+        List<Option<String>> typeOptions = List.of(
+                new Option<>("EDUCATION", "Bằng cấp / Học vấn"),
+                new Option<>("EXPERIENCE", "Kinh nghiệm thực tế"),
+                new Option<>("TRAINING", "Khoá đào tạo"),
+                new Option<>("CERTIFICATE", "Chứng chỉ nghề nghiệp"),
+                new Option<>("AUDIT_LOG", "Nhật ký đánh giá"),
+                new Option<>("COMPETENCE_TEST", "Bài kiểm tra năng lực"),
+                new Option<>("WITNESS", "Đánh giá chứng kiến (Witness)"),
+                new Option<>("INTERVIEW", "Phỏng vấn chuyên môn"),
+                new Option<>("OTHER", "Khác")
+        );
+
+        Form f = new Form()
+                .choice("type", "Loại minh chứng", typeOptions, true)
+                .area("desc", "Mô tả minh chứng", true);
+
+        f.set("type", "EDUCATION");
+
+        f.showDialog("Thêm minh chứng cho năng lực", "Lưu", () -> {
+            EvidenceRequest req = new EvidenceRequest(
+                    null,
+                    f.value("type"),
+                    null,
+                    null,
+                    f.str("desc")
+            );
+            api.addCompetencyEvidence(expert.id(), sel.id(), req);
+            return Boolean.TRUE;
+        }, ok -> onDone.run());
     }
 
     private Node history() {
