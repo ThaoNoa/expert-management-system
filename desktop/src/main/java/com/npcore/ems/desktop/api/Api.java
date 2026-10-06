@@ -233,6 +233,60 @@ public final class Api {
 
     public Setting updateSetting(String key, JsonNode value) { return c.put("/settings/" + key, Map.of("value", value), Setting.class); }
 
+    // ---------------------------------------------------------------- Competency
+    public Page<CompetencyDefinition> competencyDefinitions(UUID schemeId, UUID standardId, String status, int page, int size) {
+        return c.get("/competency-definitions" + ApiClient.query(params("schemeId", schemeId, "standardId", standardId,
+                "status", status, "page", page, "size", size)), new TypeReference<Page<CompetencyDefinition>>() {});
+    }
+
+    public List<CompetencyDefinition> activeCompetencyDefinitions(UUID standardId) {
+        return c.get("/competency-definitions/active" + ApiClient.query(params("standardId", standardId)),
+                new TypeReference<List<CompetencyDefinition>>() {});
+    }
+
+    public CompetencyDefinition createCompetencyDefinition(CompetencyDefinitionRequest r) {
+        return c.post("/competency-definitions", r, CompetencyDefinition.class);
+    }
+
+    public CompetencyDefinition updateCompetencyDefinition(UUID id, CompetencyDefinitionRequest r) {
+        return c.put("/competency-definitions/" + id, r, CompetencyDefinition.class);
+    }
+
+    public void activateCompetencyDefinition(UUID id) { c.post("/competency-definitions/" + id + "/activate", null); }
+
+    public void retireCompetencyDefinition(UUID id) { c.post("/competency-definitions/" + id + "/retire", null); }
+
+    public Page<ExpertCompetency> expertCompetencies(UUID expertId, String status, int page, int size) {
+        return c.get("/experts/" + expertId + "/competencies" + ApiClient.query(params("status", status, "page", page, "size", size)),
+                new TypeReference<Page<ExpertCompetency>>() {});
+    }
+
+    public ExpertCompetency expertCompetency(UUID expertId, UUID id) {
+        return c.get("/experts/" + expertId + "/competencies/" + id, ExpertCompetency.class);
+    }
+
+    public ExpertCompetency addExpertCompetency(UUID expertId, ExpertCompetencyRequest r) {
+        return c.post("/experts/" + expertId + "/competencies", r, ExpertCompetency.class);
+    }
+
+    public ExpertCompetency transitionExpertCompetency(UUID expertId, UUID id, String action, String comment) {
+        return c.post("/experts/" + expertId + "/competencies/" + id + "/actions",
+                new CompetencyActionRequest(action, comment), ExpertCompetency.class);
+    }
+
+    public Evidence addCompetencyEvidence(UUID expertId, UUID id, EvidenceRequest r) {
+        return c.post("/experts/" + expertId + "/competencies/" + id + "/evidences", r, Evidence.class);
+    }
+
+    public void removeCompetencyEvidence(UUID expertId, UUID id, UUID evidenceId) {
+        c.delete("/experts/" + expertId + "/competencies/" + id + "/evidences/" + evidenceId);
+    }
+
+    public List<MatrixRow> competencyMatrix(UUID standardId) {
+        return c.get("/competency-matrix" + ApiClient.query(params("standardId", standardId)),
+                new TypeReference<List<MatrixRow>>() {});
+    }
+
     private static String str(Object o) {
         return o == null ? null : o.toString();
     }

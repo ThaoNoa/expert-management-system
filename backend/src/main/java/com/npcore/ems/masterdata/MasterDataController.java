@@ -118,6 +118,9 @@ public class MasterDataController {
     @PostMapping("/code-sets/{id}/activate") @PreAuthorize(WRITE)
     public CodeSetService.CodeSetDto activateCodeSet(@PathVariable UUID id) { return codeSets.activate(id); }
 
+    @GetMapping("/codes")
+    public List<CodeSetService.CodeDto> allCodes() { return codeSets.listAllActiveCodes(); }
+
     @GetMapping("/code-sets/{id}/codes")
     public List<CodeSetService.CodeDto> codes(@PathVariable UUID id) { return codeSets.listCodes(id); }
 
