@@ -114,7 +114,7 @@ Quyền: `EXPERT_VIEW` (`:ALL` hoặc chỉ của mình), `EXPERT_CREATE`, `EXPE
 | GET | /experts/me | `ExpertDetail` của user đang đăng nhập (404 nếu chưa gắn) |
 | GET | /experts/{id} | `ExpertDetail` |
 | PUT | /experts/{id} | `ExpertRequest` |
-| POST | /experts/{id}/status | `{action: ACTIVATE|SUSPEND|REINSTATE|DEACTIVATE|REACTIVATE, comment}` |
+| POST | /experts/{id}/status | `{action: SUBMIT|APPROVE|RETURN|SUSPEND|REINSTATE|DEACTIVATE|REACTIVATE, comment, suspendedUntil?: date}` |
 | GET | /experts/{id}/history | `[{at, actor, action, fromStatus, toStatus, comment}]` |
 | GET/POST | /experts/{id}/educations | `Education` |
 | PUT/DELETE | /experts/{id}/educations/{itemId} | |
@@ -127,7 +127,7 @@ Quyền: `EXPERT_VIEW` (`:ALL` hoặc chỉ của mình), `EXPERT_CREATE`, `EXPE
 
 `ExpertRequest = {fullName, dateOfBirth?, gender?: MALE|FEMALE|OTHER, idNumber?, address?, phone?, email?, expertType: AUDITOR|TECHNICAL_EXPERT|BOTH, employmentType: FULLTIME|PARTTIME, departmentId?, position?, joinedDate?, homeLocationId?, userId?, maxMandaysPerMonth?}`
 `ExpertSummary = {id, expertCode, fullName, expertType, employmentType, status, departmentName, email, phone, updatedAt}`
-`ExpertDetail = ExpertSummary + ExpertRequest fields + {departmentName, homeLocationName, userId, username, statusReason, availableActions: string[] (các action trạng thái user hiện tại được làm, VD ["SUSPEND","DEACTIVATE"]), createdAt, counts: {educations, experiences, trainings, certificates, documents}}`
+`ExpertDetail = ExpertSummary + ExpertRequest fields + {departmentName, homeLocationName, userId, username, statusReason, suspendedUntil, availableActions: string[] (các action trạng thái user hiện tại được làm, VD ["SUSPEND","DEACTIVATE"]), createdAt, counts: {educations, experiences, trainings, certificates, documents}}`
 
 `Education = {id, degreeLevelCode, degreeLevelName, fieldId, fieldName, major, institution, graduationYear, evidenceDocumentId, verified}`
 `Experience = {id, industryId, industryName, field, position, organization, fromDate, toDate, isCurrent, verifiedUntil, description, evidenceDocumentId, years (số, 1 chữ số thập phân), codeIds: string[]}`
@@ -136,7 +136,12 @@ Quyền: `EXPERT_VIEW` (`:ALL` hoặc chỉ của mình), `EXPERT_CREATE`, `EXPE
 `Certificate = {id, certificateName, certificateNo, issuer, standardId, standardCode, issuedDate, expiryDate, documentId, status: VALID|EXPIRED|REVOKED, expiryLevel: NONE|WARNING|HIGH|CRITICAL|EXPIRED, daysToExpiry}`
 `Language = {language (ISO 639-1), proficiency: BASIC|INTERMEDIATE|FLUENT|NATIVE, canAudit}`
 
-Expert status: DRAFT → ACTIVE; ACTIVE ↔ SUSPENDED; ACTIVE/SUSPENDED → INACTIVE; INACTIVE → ACTIVE.
+Expert status (V13 – quy trình VinaCert):
+- DRAFT --SUBMIT (NV hồ sơ, EXPERT_EDIT; cần ngày sinh, SĐT, ≥1 học vấn, ≥1 kinh nghiệm)--> SUBMITTED (khoá sửa)
+- SUBMITTED --APPROVE (GĐCN, EXPERT_APPROVE; người trình không được tự duyệt)--> ACTIVE
+- SUBMITTED --RETURN (GĐCN, bắt buộc comment = nội dung cần bổ sung)--> DRAFT
+- ACTIVE --SUSPEND (bắt buộc lý do, `suspendedUntil` tuỳ chọn = ngày cuối bị dừng)--> SUSPENDED; hết hạn hệ thống tự REINSTATE (job 00:05 hằng ngày)
+- SUSPENDED --REINSTATE--> ACTIVE; ACTIVE/SUSPENDED --DEACTIVATE--> INACTIVE --REACTIVATE--> ACTIVE
 
 ## 6. Audit log (quyền `AUDIT_LOG_VIEW`)
 GET /audit-logs?objectType=&objectId=&userId=&action=&from=&to=&page=&size= → `Page<{id, occurredAt, userId, username, action, objectType, objectId, fromValue, toValue, reason, ipAddress}>`

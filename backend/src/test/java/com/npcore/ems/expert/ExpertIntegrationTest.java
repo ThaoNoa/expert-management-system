@@ -22,6 +22,9 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    @Autowired
+    SuspensionExpiryJob suspensionJob;
+
     /** CERTIFICATION_MANAGER: EXPERT_CREATE/EDIT/VIEW:ALL, không có EXPERT_APPROVE/SUSPEND. */
     private TestUser manager;
     /** CERTIFICATION_DIRECTOR: EXPERT_APPROVE, EXPERT_SUSPEND. */
@@ -108,17 +111,47 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         assertThat(filtered.path("totalElements").asLong()).isZero();
     }
 
+    /** Đủ điều kiện nộp: ngày sinh, SĐT (expertBody có sẵn), 1 học vấn, 1 kinh nghiệm. */
+    private void completeProfile(String id, String token) {
+        Map<String, Object> body = expertBody(getJson("/experts/" + id, token).path("fullName").asText(), "FULLTIME", null);
+        body.put("dateOfBirth", "1985-05-20");
+        putJson("/experts/" + id, token, body);
+        postJson("/experts/" + id + "/educations", token, Map.of("degreeLevelCode", "ENGINEER", "institution", "ĐH Bách khoa"),
+                HttpStatus.CREATED);
+        postJson("/experts/" + id + "/experiences", token, experience("2015-01-01", "2020-01-01", false, null), HttpStatus.CREATED);
+    }
+
     @Test
     void statusWorkflowAndHistory() {
         JsonNode e = createExpert(manager.token(), "Workflow " + uniq(""), "FULLTIME", null);
         String id = expertId(e);
         String path = "/experts/" + id + "/status";
 
-        // người không có EXPERT_APPROVE
-        expectError(post(path, manager.token(), Map.of("action", "ACTIVATE")), HttpStatus.FORBIDDEN, "FORBIDDEN");
-        assertThat(texts(getJson("/experts/" + id, director.token()).path("availableActions"))).containsExactly("ACTIVATE");
+        // Nháp: không phê duyệt thẳng; trình khi hồ sơ còn thiếu bị chặn
+        expectError(post(path, director.token(), Map.of("action", "APPROVE")), HttpStatus.CONFLICT, "ILLEGAL_TRANSITION");
+        assertThat(texts(getJson("/experts/" + id, manager.token()).path("availableActions"))).containsExactly("SUBMIT");
+        expectError(post(path, manager.token(), Map.of("action", "SUBMIT")), HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");
 
-        JsonNode active = postJson(path, director.token(), Map.of("action", "ACTIVATE"), HttpStatus.OK);
+        // NV hồ sơ trình → GĐCN trả lại (bắt buộc nội dung) → sửa, trình lại → GĐCN phê duyệt
+        completeProfile(id, manager.token());
+        JsonNode submitted = postJson(path, manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        assertThat(submitted.path("status").asText()).isEqualTo("SUBMITTED");
+        assertThat(texts(submitted.path("availableActions"))).isEmpty();                      // NV hồ sơ không duyệt
+        expectError(put("/experts/" + id, manager.token(), expertBody("Sửa khi chờ", "FULLTIME", null)),
+                HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");                            // khoá khi chờ duyệt
+        expectError(post(path, manager.token(), Map.of("action", "APPROVE")), HttpStatus.FORBIDDEN, "FORBIDDEN");
+        assertThat(texts(getJson("/experts/" + id, director.token()).path("availableActions")))
+                .containsExactlyInAnyOrder("APPROVE", "RETURN");
+        expectError(post(path, director.token(), Map.of("action", "RETURN")), HttpStatus.BAD_REQUEST, "VALIDATION_ERROR");
+        JsonNode returned = postJson(path, director.token(), Map.of("action", "RETURN", "comment", "Bổ sung bằng cấp"), HttpStatus.OK);
+        assertThat(returned.path("status").asText()).isEqualTo("DRAFT");
+        assertThat(returned.path("statusReason").asText()).isEqualTo("Bổ sung bằng cấp");
+        Map<String, Object> fix = expertBody(e.path("fullName").asText(), "FULLTIME", null);
+        fix.put("dateOfBirth", "1985-05-20");
+        fix.put("address", "Bổ sung theo yêu cầu GĐCN");
+        putJson("/experts/" + id, manager.token(), fix);
+        postJson(path, manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        JsonNode active = postJson(path, director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
         assertThat(active.path("status").asText()).isEqualTo("ACTIVE");
         assertThat(texts(active.path("availableActions"))).containsExactlyInAnyOrder("SUSPEND", "DEACTIVATE");
 
@@ -128,7 +161,7 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         assertThat(suspended.path("status").asText()).isEqualTo("SUSPENDED");
         assertThat(suspended.path("statusReason").asText()).isEqualTo("Vi phạm quy trình");
 
-        expectError(post(path, director.token(), Map.of("action", "ACTIVATE")), HttpStatus.CONFLICT, "ILLEGAL_TRANSITION");
+        expectError(post(path, director.token(), Map.of("action", "APPROVE")), HttpStatus.CONFLICT, "ILLEGAL_TRANSITION");
         expectError(post(path, director.token(), Map.of("action", "FLY")), HttpStatus.BAD_REQUEST, "VALIDATION_ERROR");
 
         JsonNode reinstated = postJson(path, director.token(), Map.of("action", "REINSTATE", "comment", "Đã khắc phục"), HttpStatus.OK);
@@ -137,7 +170,7 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         JsonNode history = getJson("/experts/" + id + "/history", manager.token());
         List<String> actions = new ArrayList<>();
         history.forEach(h -> actions.add(h.path("action").asText()));
-        assertThat(actions).contains("ACTIVATE", "SUSPEND", "REINSTATE", "CREATE");
+        assertThat(actions).contains("SUBMIT", "RETURN", "APPROVE", "SUSPEND", "REINSTATE", "CREATE");
         assertThat(actions.indexOf("REINSTATE")).isLessThan(actions.indexOf("SUSPEND"));     // mới nhất trước
         JsonNode suspendEntry = null;
         for (JsonNode h : history) if (h.path("action").asText().equals("SUSPEND")) suspendEntry = h;
@@ -263,12 +296,17 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         assertThat(me.path("availableActions")).isEmpty();
         expect(get("/experts/" + ownId, token), HttpStatus.OK);
 
-        // tự sửa: phone đổi được, employmentType / expertType bị bỏ qua
-        Map<String, Object> edit = expertBody(own.path("fullName").asText(), "PARTTIME", null);
+        // tự sửa: chỉ thông tin liên hệ; họ tên, ngày sinh, loại, hợp đồng... bị bỏ qua
+        Map<String, Object> edit = expertBody("Đổi tên trái phép", "PARTTIME", null);
         edit.put("phone", "0987654321");
+        edit.put("address", "12 Láng Hạ, Hà Nội");
+        edit.put("dateOfBirth", "1999-01-01");
         edit.put("expertType", "BOTH");
         JsonNode edited = putJson("/experts/" + ownId, token, edit);
         assertThat(edited.path("phone").asText()).isEqualTo("0987654321");
+        assertThat(edited.path("address").asText()).isEqualTo("12 Láng Hạ, Hà Nội");
+        assertThat(edited.path("fullName").asText()).isEqualTo(own.path("fullName").asText());
+        assertThat(edited.path("dateOfBirth").isNull()).isTrue();
         assertThat(edited.path("employmentType").asText()).isEqualTo("FULLTIME");
         assertThat(edited.path("expertType").asText()).isEqualTo("AUDITOR");
         assertThat(edited.path("expertCode").asText()).isEqualTo(own.path("expertCode").asText());
@@ -282,16 +320,101 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         expectError(post("/experts/" + otherId + "/experiences", token, experience("2020-01-01", "2021-01-01", false, null)),
                 HttpStatus.NOT_FOUND, "NOT_FOUND");
         expectError(post("/experts", token, expertBody("x", "FULLTIME", null)), HttpStatus.FORBIDDEN, "FORBIDDEN");
-        expectError(post("/experts/" + ownId + "/status", token, Map.of("action", "ACTIVATE")), HttpStatus.FORBIDDEN, "FORBIDDEN");
+        expectError(post("/experts/" + ownId + "/status", token, Map.of("action", "SUBMIT")), HttpStatus.FORBIDDEN, "FORBIDDEN");
 
         // hồ sơ con của chính mình
-        postJson("/experts/" + ownId + "/experiences", token, experience("2019-01-01", "2020-01-01", false, null), HttpStatus.CREATED);
-        putJson("/experts/" + ownId + "/languages/vi", token, Map.of("proficiency", "NATIVE", "canAudit", true));
+        // năng lực của chính mình: chỉ xem, không tự thêm / sửa (NV hồ sơ làm)
+        expectError(post("/experts/" + ownId + "/experiences", token, experience("2019-01-01", "2020-01-01", false, null)),
+                HttpStatus.FORBIDDEN, "FORBIDDEN");
+        expectError(put("/experts/" + ownId + "/languages/vi", token, Map.of("proficiency", "NATIVE", "canAudit", true)),
+                HttpStatus.FORBIDDEN, "FORBIDDEN");
+        postJson("/experts/" + ownId + "/experiences", manager.token(), experience("2019-01-01", "2020-01-01", false, null), HttpStatus.CREATED);
         assertThat(getJson("/experts/" + ownId + "/experiences", token)).hasSize(1);
 
         // user không gắn chuyên gia
         TestUser lonely = createUserWithRoles("EXPERT");
         expectError(get("/experts/me", lonely.token()), HttpStatus.NOT_FOUND, "NOT_FOUND");
+    }
+
+    @Test
+    void submitterCannotApproveOwnSubmission() {
+        // một người kiêm cả NV hồ sơ và GĐCN: trình được nhưng không tự phê duyệt hồ sơ mình trình (SoD)
+        TestUser both = createUserWithRoles("CERTIFICATION_MANAGER", "CERTIFICATION_DIRECTOR");
+        JsonNode e = createExpert(both.token(), "SoD " + uniq(""), "FULLTIME", null);
+        completeProfile(expertId(e), both.token());
+        String path = "/experts/" + expertId(e) + "/status";
+        postJson(path, both.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        expectError(post(path, both.token(), Map.of("action", "APPROVE")), HttpStatus.UNPROCESSABLE_ENTITY, "BUSINESS_RULE");
+        postJson(path, director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
+    }
+
+    @Test
+    void permissionsFollowVinaCertRoles() {
+        TestUser office = createUserWithRoles("DOCUMENT_CONTROLLER");          // Văn phòng
+        TestUser head = createUserWithRoles("HEAD_CERTIFICATION");             // Trưởng / phó phòng CN
+
+        // Văn phòng: nhập thông tin nhân sự, không nhập năng lực, không trình
+        JsonNode e = createExpert(office.token(), "Nhân sự mới " + uniq(""), "FULLTIME", null);
+        String id = expertId(e);
+        Map<String, Object> hr = expertBody(e.path("fullName").asText(), "FULLTIME", null);
+        hr.put("dateOfBirth", "1990-02-02");
+        hr.put("position", "Chuyên gia đánh giá");
+        assertThat(putJson("/experts/" + id, office.token(), hr).path("position").asText()).isEqualTo("Chuyên gia đánh giá");
+        expectError(post("/experts/" + id + "/experiences", office.token(), experience("2015-01-01", "2016-01-01", false, null)),
+                HttpStatus.FORBIDDEN, "FORBIDDEN");
+        assertThat(texts(getJson("/experts/" + id, office.token()).path("availableActions"))).isEmpty();
+        expectError(post("/experts/" + id + "/status", office.token(), Map.of("action", "SUBMIT")), HttpStatus.FORBIDDEN, "FORBIDDEN");
+        expectError(uploadMultipart("/experts/import", office.token(), "ho-so.csv",
+                "expertCode,fullName\n".getBytes(java.nio.charset.StandardCharsets.UTF_8), null), HttpStatus.FORBIDDEN, "FORBIDDEN");
+
+        // NV hồ sơ: nhập năng lực rồi trình
+        completeProfile(id, manager.token());
+        postJson("/experts/" + id + "/status", manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+
+        // GĐCN: chỉ duyệt, không sửa nội dung
+        expectError(put("/experts/" + id, director.token(), hr), HttpStatus.FORBIDDEN, "FORBIDDEN");
+        expectError(post("/experts/" + id + "/educations", director.token(), Map.of("degreeLevelCode", "MASTER", "institution", "X")),
+                HttpStatus.FORBIDDEN, "FORBIDDEN");
+        postJson("/experts/" + id + "/status", director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
+
+        // Trưởng / phó phòng: xem toàn bộ, không sửa, không duyệt
+        assertThat(getJson("/experts?q=" + e.path("expertCode").asText(), head.token()).path("totalElements").asLong()).isEqualTo(1);
+        assertThat(getJson("/experts/" + id + "/experiences", head.token())).hasSize(1);
+        assertThat(texts(getJson("/experts/" + id, head.token()).path("availableActions"))).isEmpty();
+        expectError(put("/experts/" + id, head.token(), hr), HttpStatus.FORBIDDEN, "FORBIDDEN");
+        expectError(post("/experts", head.token(), expertBody("x", "FULLTIME", null)), HttpStatus.FORBIDDEN, "FORBIDDEN");
+    }
+
+    @Test
+    void timedSuspensionReopensAutomatically() {
+        JsonNode e = createExpert(manager.token(), "Dừng có hạn " + uniq(""), "FULLTIME", null);
+        String id = expertId(e);
+        String path = "/experts/" + id + "/status";
+        completeProfile(id, manager.token());
+        postJson(path, manager.token(), Map.of("action", "SUBMIT"), HttpStatus.OK);
+        postJson(path, director.token(), Map.of("action", "APPROVE"), HttpStatus.OK);
+
+        String until = LocalDate.now().plusDays(30).toString();
+        expectError(post(path, director.token(), Map.of("action", "SUSPEND", "comment", "x", "suspendedUntil",
+                LocalDate.now().toString())), HttpStatus.BAD_REQUEST, "VALIDATION_ERROR");
+        JsonNode suspended = postJson(path, director.token(),
+                Map.of("action", "SUSPEND", "comment", "Chờ witness", "suspendedUntil", until), HttpStatus.OK);
+        assertThat(suspended.path("suspendedUntil").asText()).isEqualTo(until);
+        assertThat(suspended.path("statusReason").asText()).startsWith("Chờ witness (dừng đến hết");
+
+        // chưa hết hạn: job không mở
+        suspensionJob.run();
+        assertThat(getJson("/experts/" + id, manager.token()).path("status").asText()).isEqualTo("SUSPENDED");
+
+        // giả lập đã quá hạn
+        jdbc.update("UPDATE experts SET suspended_until = current_date - 1 WHERE expert_id = ?::uuid", id);
+        assertThat(suspensionJob.run()).isGreaterThanOrEqualTo(1);
+        JsonNode reopened = getJson("/experts/" + id, manager.token());
+        assertThat(reopened.path("status").asText()).isEqualTo("ACTIVE");
+        assertThat(reopened.path("suspendedUntil").isNull()).isTrue();
+        JsonNode last = getJson("/experts/" + id + "/history", manager.token()).get(0);
+        assertThat(last.path("action").asText()).isEqualTo("REINSTATE");
+        assertThat(last.path("actor").asText()).isEqualTo(director.username);
     }
 
     @Test

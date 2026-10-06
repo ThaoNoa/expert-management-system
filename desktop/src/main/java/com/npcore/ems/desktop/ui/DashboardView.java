@@ -28,10 +28,11 @@ public final class DashboardView extends VBox {
             Map<String, String> statuses = new LinkedHashMap<>();
             statuses.put("ACTIVE", "Chuyên gia đang hoạt động");
             statuses.put("DRAFT", "Hồ sơ nháp");
+            statuses.put("SUBMITTED", "Chờ GĐCN phê duyệt");
             statuses.put("SUSPENDED", "Đang tạm dừng");
             statuses.put("INACTIVE", "Ngừng hoạt động");
             statuses.forEach((status, label) -> {
-                VBox card = card(label, "…", status.equals("SUSPENDED") ? "warn" : status.equals("ACTIVE") ? "ok" : "muted");
+                VBox card = card(label, "…", status.equals("SUSPENDED") || status.equals("SUBMITTED") ? "warn" : status.equals("ACTIVE") ? "ok" : "muted");
                 cards.getChildren().add(card);
                 Async.run(card, () -> session.api().experts(null, null, null, status, 0, 1, null).totalElements(),
                         n -> ((Label) card.getChildren().get(1)).setText(String.valueOf(n)), e -> {});

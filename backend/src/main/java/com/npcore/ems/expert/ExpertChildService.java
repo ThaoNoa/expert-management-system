@@ -41,7 +41,7 @@ public abstract class ExpertChildService<E extends ExpertChild, D, R> {
 
     @Transactional
     public D create(UUID expertId, R request) {
-        access.requireEdit(expertId);
+        access.requireCompetencyEdit(expertId);
         E e = newEntity();
         e.setExpertId(expertId);
         apply(e, request);
@@ -53,7 +53,7 @@ public abstract class ExpertChildService<E extends ExpertChild, D, R> {
 
     @Transactional
     public D update(UUID expertId, UUID itemId, R request) {
-        access.requireEdit(expertId);
+        access.requireCompetencyEdit(expertId);
         E e = load(expertId, itemId);
         D before = toDto(e);
         apply(e, request);
@@ -65,7 +65,7 @@ public abstract class ExpertChildService<E extends ExpertChild, D, R> {
 
     @Transactional
     public void delete(UUID expertId, UUID itemId) {
-        access.requireEdit(expertId);
+        access.requireCompetencyEdit(expertId);
         E e = load(expertId, itemId);
         audit.record("DELETE", objectType, itemId, toDto(e), null, "expert=" + expertId);
         repository.delete(e);

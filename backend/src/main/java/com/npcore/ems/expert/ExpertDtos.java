@@ -38,7 +38,7 @@ public final class ExpertDtos {
 
     public record ExpertSummary(UUID id, String expertCode, String fullName, String expertType, String employmentType,
                                 String status, String departmentName, String email, String phone,
-                                OffsetDateTime updatedAt) {}
+                                OffsetDateTime updatedAt, LocalDate suspendedUntil) {}
 
     public record Counts(long educations, long experiences, long trainings, long certificates, long documents) {}
 
@@ -47,11 +47,12 @@ public final class ExpertDtos {
                                String employmentType, UUID departmentId, String departmentName, String position,
                                LocalDate joinedDate, UUID homeLocationId, String homeLocationName, UUID userId,
                                String username, BigDecimal maxMandaysPerMonth, String status, String statusReason,
-                               List<String> availableActions, OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                               LocalDate suspendedUntil, List<String> availableActions, OffsetDateTime createdAt, OffsetDateTime updatedAt,
                                Counts counts) {}
 
-    public record StatusRequest(@NotBlank @Pattern(regexp = "ACTIVATE|SUSPEND|REINSTATE|DEACTIVATE|REACTIVATE") String action,
-                                @Size(max = 2000) String comment) {}
+    public record StatusRequest(@NotBlank @Pattern(regexp = "SUBMIT|APPROVE|RETURN|SUSPEND|REINSTATE|DEACTIVATE|REACTIVATE") String action,
+                                @Size(max = 2000) String comment,
+                                LocalDate suspendedUntil) {}
 
     public record HistoryEntry(OffsetDateTime at, String actor, String action, String fromStatus, String toStatus,
                                String comment) {}

@@ -23,10 +23,19 @@ public final class ExpertListView extends VBox {
     private final TextField q = new TextField();
     private final ComboBox<Option<String>> type = combo("Loại chuyên gia", "AUDITOR", "TECHNICAL_EXPERT");
     private final ComboBox<Option<String>> employment = combo("Hình thức", "FULLTIME", "PARTTIME");
-    private final ComboBox<Option<String>> status = combo("Trạng thái", "DRAFT", "ACTIVE", "SUSPENDED", "INACTIVE");
+    private final ComboBox<Option<String>> status = combo("Trạng thái", "DRAFT", "SUBMITTED", "ACTIVE", "SUSPENDED", "INACTIVE");
 
     public ExpertListView(Session session, Navigator nav) {
+        this(session, nav, null, "Danh sách chuyên gia");
+    }
+
+    /** presetStatus != null: màn hình hàng đợi (VD "Chờ phê duyệt" của GĐCN). */
+    public ExpertListView(Session session, Navigator nav, String presetStatus, String title) {
         super(12);
+        if (presetStatus != null) {
+            status.getItems().stream().filter(o -> presetStatus.equals(o.value())).findFirst()
+                    .ifPresent(o -> status.getSelectionModel().select(o));
+        }
         setPadding(new Insets(16));
         TableView<ExpertSummary> table = Tables.table("Không có chuyên gia phù hợp");
         table.getColumns().addAll(List.of(
@@ -37,7 +46,8 @@ public final class ExpertListView extends VBox {
                 Tables.col("Phòng ban", ExpertSummary::departmentName, 140),
                 Tables.col("Email", ExpertSummary::email, 200),
                 Tables.col("Điện thoại", ExpertSummary::phone, 110),
-                Tables.status("Trạng thái", ExpertSummary::status, 130)));
+                Tables.status("Trạng thái", ExpertSummary::status, 150),
+                Tables.col("Dừng đến hết", e -> Fmt.date(e.suspendedUntil()), 100)));
         PagedTable<ExpertSummary> paged = new PagedTable<>(table, (page, size) -> session.api().experts(
                 blank(q.getText()), value(type), value(employment), value(status), page, size, "code,asc"));
         Tables.onOpen(table, e -> nav.open("expert:" + e.id(), e.expertCode() + " · " + e.fullName(),
@@ -57,7 +67,7 @@ public final class ExpertListView extends VBox {
             })));
         }
         VBox.setVgrow(paged, Priority.ALWAYS);
-        getChildren().addAll(Ui.title("Danh sách chuyên gia"), toolbar, paged);
+        getChildren().addAll(Ui.title(title), toolbar, paged);
         paged.reload();
     }
 

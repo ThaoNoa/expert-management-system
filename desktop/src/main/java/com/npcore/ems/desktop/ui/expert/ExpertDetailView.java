@@ -17,8 +17,7 @@ import com.npcore.ems.desktop.api.Dtos.Training;
 import com.npcore.ems.desktop.api.Dtos.TrainingRequest;
 import com.npcore.ems.desktop.api.Session;
 import com.npcore.ems.desktop.ui.Navigator;
-import com.npcore.ems.desktop.ui.document.DocumentDetailDialog;
-import com.npcore.ems.desktop.ui.document.UploadDialog;
+import com.npcore.ems.desktop.ui.document.ExpertDocumentsPane;
 import com.npcore.ems.desktop.ui.fx.Async;
 import com.npcore.ems.desktop.ui.fx.Dialogs;
 import com.npcore.ems.desktop.ui.fx.Fmt;
@@ -105,8 +104,19 @@ public final class ExpertDetailView extends BorderPane {
         return new Tab(title, content);
     }
 
+    /** Năng lực (học vấn, kinh nghiệm, code, đào tạo, chứng chỉ, ngoại ngữ) – NV hồ sơ. Khoá khi đã trình GĐCN. */
     private boolean canEdit() {
-        return session.has("EXPERT_EDIT");
+        return session.has("EXPERT_COMPETENCY_EDIT") && !"SUBMITTED".equals(expert.status());
+    }
+
+    /** Thông tin chung / nhân sự – Văn phòng, NV hồ sơ. */
+    private boolean canEditGeneral() {
+        return session.has("EXPERT_EDIT") && !"SUBMITTED".equals(expert.status());
+    }
+
+    /** Chuyên gia tự sửa liên hệ của mình. */
+    private boolean canEditContact() {
+        return session.has("EXPERT_CONTACT_EDIT") && session.me().id().equals(expert.userId());
     }
 
     private Node header() {
@@ -118,15 +128,16 @@ public final class ExpertDetailView extends BorderPane {
         HBox titleRow = new HBox(10, name, Tables.tag(expert.status()));
         titleRow.setAlignment(Pos.CENTER_LEFT);
         VBox left = new VBox(4, titleRow, sub);
-        if (expert.statusReason() != null && !"ACTIVE".equals(expert.status())) {
-            left.getChildren().add(Ui.hint("Lý do: " + expert.statusReason()));
-        }
+        Label banner = banner();
+        if (banner != null) left.getChildren().add(banner);
         HBox actions = new HBox(8);
         actions.setAlignment(Pos.CENTER_RIGHT);
         for (String action : expert.availableActions()) {
-            Button b = "SUSPEND".equals(action) || "DEACTIVATE".equals(action)
-                    ? Ui.danger(Fmt.label(action), () -> changeStatus(action))
-                    : Ui.button(Fmt.label(action), () -> changeStatus(action));
+            Button b = switch (action) {
+                case "SUSPEND", "DEACTIVATE", "RETURN" -> Ui.danger(Fmt.label(action), () -> changeStatus(action));
+                case "SUBMIT", "APPROVE" -> Ui.primary(Fmt.label(action), () -> changeStatus(action));
+                default -> Ui.button(Fmt.label(action), () -> changeStatus(action));
+            };
             actions.getChildren().add(b);
         }
         HBox.setHgrow(left, Priority.ALWAYS);
@@ -135,11 +146,49 @@ public final class ExpertDetailView extends BorderPane {
         return box;
     }
 
+    /** Dòng thông báo dưới tên chuyên gia theo trạng thái (trả lại, chờ duyệt, dừng có thời hạn...). */
+    private Label banner() {
+        String reason = expert.statusReason();
+        String text = switch (expert.status()) {
+            case "DRAFT" -> reason == null ? null : "GĐCN trả lại, yêu cầu bổ sung: " + reason;
+            case "SUBMITTED" -> "Đã trình – đang chờ GĐCN phê duyệt. Hồ sơ tạm khoá sửa.";
+            case "SUSPENDED" -> (expert.suspendedUntil() == null ? "Dừng đánh giá tới khi GĐCN mở lại"
+                    : "Dừng đánh giá đến hết " + Fmt.date(expert.suspendedUntil()) + " (tự mở lại sau ngày này)")
+                    + (reason == null ? "" : ". Lý do: " + reason.replaceAll("\\s*\\(dừng đến hết [^)]*\\)$", ""));
+            case "INACTIVE" -> reason == null ? null : "Lý do: " + reason;
+            default -> null;
+        };
+        if (text == null) return null;
+        Label l = new Label(text);
+        l.setWrapText(true);
+        l.getStyleClass().addAll("banner", "DRAFT".equals(expert.status()) || "SUSPENDED".equals(expert.status())
+                ? "banner-warn" : "banner-info");
+        return l;
+    }
+
     private void changeStatus(String action) {
-        boolean required = !"ACTIVATE".equals(action);
-        Dialogs.askText(Fmt.label(action) + " – " + expert.expertCode(), "Lý do / ghi chú", required).ifPresent(comment ->
-                Async.run(this, () -> api.changeExpertStatus(expert.id(), action, comment.isBlank() ? null : comment),
-                        d -> reloadHeader()));
+        boolean required = switch (action) {
+            case "SUBMIT", "APPROVE" -> false;
+            default -> true;
+        };
+        String label = switch (action) {
+            case "RETURN" -> "Nội dung cần bổ sung / lý do trả lại";
+            case "SUBMIT" -> "Ghi chú gửi GĐCN";
+            case "APPROVE" -> "Ý kiến phê duyệt";
+            default -> "Lý do";
+        };
+        Form f = new Form().area("comment", label, required);
+        if ("SUSPEND".equals(action)) {
+            f.date("until", "Dừng đến hết ngày", false)
+                    .note("Để trống = dừng tới khi GĐCN mở lại. Có ngày: hết ngày đó hệ thống tự mở lại. "
+                            + "Chuyên gia đang dừng sẽ không được chọn vào đoàn đánh giá.");
+        }
+        if ("SUBMIT".equals(action)) f.note("Hồ sơ cần có ngày sinh, số điện thoại, ít nhất 1 học vấn và 1 kinh nghiệm. "
+                + "Sau khi trình, hồ sơ bị khoá sửa tới khi GĐCN phê duyệt hoặc trả lại.");
+        f.showDialog(Fmt.label(action) + " – " + expert.expertCode() + " · " + expert.fullName(), Fmt.label(action),
+                () -> api.changeExpertStatus(expert.id(), action, f.str("comment"),
+                        "SUSPEND".equals(action) ? f.date("until") : null),
+                d -> reloadHeader());
     }
 
     // ------------------------------------------------------------------ thông tin chung
@@ -169,14 +218,32 @@ public final class ExpertDetailView extends BorderPane {
         }
         VBox box = new VBox(12);
         box.setPadding(new Insets(12));
-        if (canEdit()) {
+        if (canEditGeneral()) {
             box.getChildren().add(Ui.toolbar(Ui.button("Sửa thông tin", () ->
                     ExpertForm.open(session, this, expert, d -> reloadHeader()))));
+        } else if (canEditContact()) {
+            box.getChildren().add(Ui.toolbar(Ui.button("Sửa thông tin liên hệ", this::editContact)));
+        }
+        if (!session.hasAll("EXPERT_VIEW")) {
+            box.getChildren().add(Ui.hint("Học vấn, kinh nghiệm, code, đào tạo, chứng chỉ do Nhân viên hồ sơ cập nhật và GĐCN phê duyệt. "
+                    + "Nếu có thay đổi, hãy tải tài liệu bổ sung ở tab Tài liệu hoặc liên hệ Nhân viên hồ sơ."));
         }
         box.getChildren().add(g);
         ScrollPane sp = new ScrollPane(box);
         sp.setFitToWidth(true);
         return sp;
+    }
+
+    private void editContact() {
+        Form f = new Form().text("phone", "Điện thoại", false).text("email", "Email", false).area("address", "Địa chỉ", false)
+                .set("phone", expert.phone()).set("email", expert.email()).set("address", expert.address());
+        f.showDialog("Sửa thông tin liên hệ", "Lưu", () -> {
+            var r = expert.toRequest();
+            return api.updateExpert(expert.id(), new com.npcore.ems.desktop.api.Dtos.ExpertRequest(r.fullName(),
+                    r.dateOfBirth(), r.gender(), r.idNumber(), f.str("address"), f.str("phone"), f.str("email"),
+                    r.expertType(), r.employmentType(), r.departmentId(), r.position(), r.joinedDate(),
+                    r.homeLocationId(), r.userId(), r.maxMandaysPerMonth()));
+        }, d -> reloadHeader());
     }
 
     // ------------------------------------------------------------------ danh sách con
@@ -193,7 +260,7 @@ public final class ExpertDetailView extends BorderPane {
     private ItemsPane<Education> educations() {
         List<Option<UUID>> evidence = new ArrayList<>();
         Async.run(null, this::evidenceOptions, evidence::addAll, e -> {});
-        boolean verifier = session.hasAll("EXPERT_EDIT");
+        boolean verifier = session.hasAll("EXPERT_COMPETENCY_EDIT");
         ItemsPane<Education> pane = new ItemsPane<>("Học vấn", List.of(
                 Tables.col("Trình độ", Education::degreeLevelName, 110),
                 Tables.col("Lĩnh vực", Education::fieldName, 160),
@@ -398,27 +465,11 @@ public final class ExpertDetailView extends BorderPane {
     // ------------------------------------------------------------------ tài liệu & lịch sử
 
     private Node documents() {
-        TableView<DocumentSummary> table = Tables.table("Chưa có tài liệu");
-        table.getColumns().addAll(List.of(
-                Tables.col("Tiêu đề", DocumentSummary::title, 260),
-                Tables.col("Loại", DocumentSummary::documentTypeName, 140),
-                Tables.col("Phiên bản", d -> d.currentVersion() == null ? "" : "v" + d.currentVersion().versionNo(), 80),
-                Tables.col("Hết hạn", d -> d.currentVersion() == null ? "" : Fmt.date(d.currentVersion().expiryDate()), 100),
-                Tables.status("Trạng thái", d -> d.currentVersion() == null ? null : d.currentVersion().status(), 140),
-                Tables.col("Ngày tạo", d -> Fmt.dateTime(d.createdAt()), 130)));
-        Runnable reload = () -> Async.run(table, () -> api.documents(expert.id(), null, null, null, 0, 200).content(),
-                rows -> table.getItems().setAll(rows));
-        Tables.onOpen(table, d -> DocumentDetailDialog.open(session, d.id(), reload));
-        VBox box = new VBox(10);
-        box.setPadding(new Insets(12));
-        if (session.has("DOCUMENT_MANAGE")) {
-            box.getChildren().add(Ui.toolbar(Ui.primary("+ Upload tài liệu", () ->
-                    UploadDialog.open(session, lookups, expert.id(), List.of(), r -> reload.run()))));
-        }
-        VBox.setVgrow(table, Priority.ALWAYS);
-        box.getChildren().addAll(table, Ui.hint("Nhấp đúp để xem các phiên bản, tải về, xác minh."));
-        reload.run();
-        return box;
+        ExpertDocumentsPane pane = new ExpertDocumentsPane(session, lookups, expert.id());
+        pane.showExpert(expert.id(), expert.expertCode() + " · " + expert.fullName());
+        pane.setEditable(!"SUBMITTED".equals(expert.status()));
+        pane.setPadding(new Insets(12));
+        return pane;
     }
 
     private Node history() {

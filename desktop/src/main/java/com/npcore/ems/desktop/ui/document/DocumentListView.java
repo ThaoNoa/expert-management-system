@@ -1,82 +1,125 @@
 package com.npcore.ems.desktop.ui.document;
 
-import com.npcore.ems.desktop.api.Dtos.DocumentSummary;
 import com.npcore.ems.desktop.api.Dtos.ExpertSummary;
 import com.npcore.ems.desktop.api.Session;
 import com.npcore.ems.desktop.ui.fx.Async;
 import com.npcore.ems.desktop.ui.fx.Fmt;
-import com.npcore.ems.desktop.ui.fx.Form.Option;
 import com.npcore.ems.desktop.ui.fx.Lookups;
-import com.npcore.ems.desktop.ui.fx.PagedTable;
 import com.npcore.ems.desktop.ui.fx.Tables;
 import com.npcore.ems.desktop.ui.fx.Ui;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.UUID;
+import javafx.animation.PauseTransition;
 import javafx.geometry.Insets;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.TableView;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 
-/** Kho tài liệu: lọc, upload, xem chi tiết (nhấp đúp). */
-public final class DocumentListView extends VBox {
+/**
+ * Tài liệu chuyên gia: trái là danh sách chuyên gia (tìm theo tên / mã, không cần dấu), phải là tài liệu của
+ * chuyên gia đang chọn – tải lên, tìm theo cụm từ, xem / xác minh. "Tất cả chuyên gia" để tìm trong toàn bộ kho.
+ * Tài khoản chuyên gia (chỉ thấy hồ sơ của mình) chỉ thấy phần bên phải với tài liệu của chính mình.
+ */
+public final class DocumentListView extends BorderPane {
+
+    private final Session session;
+    private final Label heading = Ui.title("Tài liệu chuyên gia");
+    private final Label subHeading = Ui.hint("");
 
     public DocumentListView(Session session) {
-        super(12);
+        this.session = session;
         setPadding(new Insets(16));
-        TextField q = new TextField();
-        q.setPromptText("Tìm theo tiêu đề");
-        ComboBox<Option<String>> type = new ComboBox<>();
-        type.setPromptText("Loại tài liệu");
-        ComboBox<Option<String>> status = new ComboBox<>();
-        status.setPromptText("Trạng thái");
-        List<Option<String>> statuses = new ArrayList<>();
-        statuses.add(new Option<>(null, "Tất cả trạng thái"));
-        for (String c : List.of("PENDING_VERIFICATION", "VERIFIED", "REJECTED", "EXPIRED")) statuses.add(new Option<>(c, Fmt.label(c)));
-        status.getItems().setAll(statuses);
+        setTop(new VBox(2, heading, subHeading));
+        setCenter(new Label("Đang tải…"));
+        Async.run(this, () -> Lookups.load(session), this::build);
+    }
 
-        TableView<DocumentSummary> table = Tables.table("Không có tài liệu");
-        table.getColumns().addAll(List.of(
-                Tables.col("Tiêu đề", DocumentSummary::title, 260),
-                Tables.col("Loại", DocumentSummary::documentTypeName, 140),
-                Tables.col("Chuyên gia", DocumentSummary::ownerExpertName, 180),
-                Tables.col("Bản", d -> d.currentVersion() == null ? "" : "v" + d.currentVersion().versionNo(), 50),
-                Tables.col("Hết hạn", d -> d.currentVersion() == null ? "" : Fmt.date(d.currentVersion().expiryDate()), 100),
-                Tables.status("Trạng thái", d -> d.currentVersion() == null ? null : d.currentVersion().status(), 140),
-                Tables.col("Ngày tạo", d -> Fmt.dateTime(d.createdAt()), 130)));
-        PagedTable<DocumentSummary> paged = new PagedTable<>(table, (page, size) -> session.api().documents(null,
-                type.getValue() == null ? null : type.getValue().value(),
-                status.getValue() == null ? null : status.getValue().value(),
-                q.getText().isBlank() ? null : q.getText().trim(), page, size));
-        Tables.onOpen(table, d -> DocumentDetailDialog.open(session, d.id(), paged::refresh));
-        q.setOnAction(e -> paged.reload());
-        type.setOnAction(e -> paged.reload());
-        status.setOnAction(e -> paged.reload());
-
-        Lookups[] lookups = new Lookups[1];
-        List<ExpertSummary> experts = new ArrayList<>();
-        Async.run(null, () -> Lookups.load(session), l -> {
-            lookups[0] = l;
-            List<Option<String>> types = new ArrayList<>();
-            types.add(new Option<>(null, "Tất cả loại"));
-            types.addAll(l.documentTypeOptions());
-            type.getItems().setAll(types);
-        }, e -> {});
-        if (session.hasAll("EXPERT_VIEW")) {
-            Async.run(null, () -> session.api().experts(null, null, null, null, 0, 500, "fullName,asc").content(),
-                    experts::addAll, e -> {});
+    private void build(Lookups lookups) {
+        boolean all = session.hasAll("EXPERT_VIEW");
+        UUID ownExpert = session.me().expertId();
+        ExpertDocumentsPane docs = new ExpertDocumentsPane(session, lookups, all ? null : ownExpert);
+        BorderPane.setMargin(docs, new Insets(12, 0, 0, 0));
+        if (!all) {
+            subHeading.setText("Tài liệu trong hồ sơ của bạn");
+            setCenter(docs);
+            return;
         }
+        subHeading.setText("Chọn một chuyên gia ở bên trái để xem và tải tài liệu lên, hoặc tìm trong toàn bộ kho.");
 
-        var toolbar = Ui.toolbar(q, type, status, Ui.button("Tìm", paged::reload), Ui.spacer());
-        if (session.has("DOCUMENT_MANAGE")) {
-            toolbar.getChildren().add(Ui.primary("+ Upload tài liệu", () -> {
-                if (lookups[0] != null) UploadDialog.open(session, lookups[0], null, experts, r -> paged.reload());
-            }));
+        // ---- danh sách chuyên gia
+        TextField find = new TextField();
+        find.setPromptText("Tìm chuyên gia (tên, mã)…");
+        ListView<ExpertSummary> experts = new ListView<>();
+        experts.setCellFactory(v -> new ExpertCell());
+        experts.setPlaceholder(new Label("Không có chuyên gia phù hợp"));
+        Button allButton = Ui.button("Tất cả chuyên gia", () -> experts.getSelectionModel().clearSelection());
+        allButton.setMaxWidth(Double.MAX_VALUE);
+        Runnable loadExperts = () -> Async.run(experts, () -> session.api().experts(
+                        find.getText() == null || find.getText().isBlank() ? null : find.getText().trim(),
+                        null, null, null, 0, 500, "fullName,asc").content(),
+                rows -> experts.getItems().setAll(rows));
+        PauseTransition debounce = new PauseTransition(Duration.millis(350));
+        debounce.setOnFinished(e -> loadExperts.run());
+        find.textProperty().addListener((o, a, b) -> debounce.playFromStart());
+
+        experts.getSelectionModel().selectedItemProperty().addListener((o, a, e) -> {
+            if (e == null) {
+                heading.setText("Tài liệu chuyên gia");
+                subHeading.setText("Đang xem: tất cả chuyên gia. Chọn một chuyên gia để tải tài liệu lên.");
+                docs.setEditable(true);
+                docs.showExpert(null);
+            } else {
+                heading.setText(e.fullName() + "  ·  " + e.expertCode());
+                boolean locked = "SUBMITTED".equals(e.status());
+                subHeading.setText(Fmt.label(e.expertType()) + " · " + Fmt.label(e.status())
+                        + (locked ? " – hồ sơ đang chờ GĐCN phê duyệt nên tạm khoá tải lên" : ""));
+                docs.setEditable(!locked);
+                docs.showExpert(e.id(), e.expertCode() + " · " + e.fullName());
+            }
+        });
+
+        VBox left = new VBox(8, find, allButton, experts);
+        VBox.setVgrow(experts, Priority.ALWAYS);
+        left.setPadding(new Insets(0, 10, 0, 0));
+        left.setMinWidth(240);
+        SplitPane split = new SplitPane(left, docs);
+        split.setDividerPositions(0.24);
+        SplitPane.setResizableWithParent(left, false);
+        BorderPane.setMargin(split, new Insets(12, 0, 0, 0));
+        setCenter(split);
+        loadExperts.run();
+    }
+
+    /** Ô chuyên gia: họ tên (đậm) + mã · trạng thái. */
+    private static final class ExpertCell extends ListCell<ExpertSummary> {
+        @Override
+        protected void updateItem(ExpertSummary e, boolean empty) {
+            super.updateItem(e, empty);
+            if (empty || e == null) {
+                setGraphic(null);
+                setText(null);
+                return;
+            }
+            Label name = new Label(e.fullName());
+            name.getStyleClass().add("cell-title");
+            Label code = new Label(e.expertCode());
+            code.getStyleClass().add("hint");
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            HBox line2 = new HBox(6, code, gap, Tables.tag(e.status()));
+            line2.setAlignment(Pos.CENTER_LEFT);
+            VBox box = new VBox(2, name, line2);
+            setText(null);
+            setGraphic(box);
         }
-        VBox.setVgrow(paged, Priority.ALWAYS);
-        getChildren().addAll(Ui.title("Tài liệu"), toolbar, paged,
-                Ui.hint("Nhấp đúp vào dòng để xem phiên bản, tải về, xác minh hoặc từ chối."));
-        paged.reload();
     }
 }

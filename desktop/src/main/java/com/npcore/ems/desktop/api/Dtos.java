@@ -101,7 +101,7 @@ public final class Dtos {
 
     public record ExpertSummary(UUID id, String expertCode, String fullName, String expertType, String employmentType,
                                 String status, String departmentName, String email, String phone,
-                                OffsetDateTime updatedAt) {}
+                                OffsetDateTime updatedAt, LocalDate suspendedUntil) {}
 
     public record Counts(long educations, long experiences, long trainings, long certificates, long documents) {}
 
@@ -110,7 +110,7 @@ public final class Dtos {
                                String employmentType, UUID departmentId, String departmentName, String position,
                                LocalDate joinedDate, UUID homeLocationId, String homeLocationName, UUID userId,
                                String username, BigDecimal maxMandaysPerMonth, String status, String statusReason,
-                               List<String> availableActions, OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                               LocalDate suspendedUntil, List<String> availableActions, OffsetDateTime createdAt, OffsetDateTime updatedAt,
                                Counts counts) {
         public ExpertRequest toRequest() {
             return new ExpertRequest(fullName, dateOfBirth, gender, idNumber, address, phone, email, expertType,

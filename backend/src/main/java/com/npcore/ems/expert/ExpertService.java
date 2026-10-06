@@ -21,6 +21,8 @@ import com.npcore.ems.shared.workflow.WorkflowService;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import java.text.Normalizer;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -42,6 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ExpertService {
+
+    static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final ExpertRepository experts;
     private final ExpertCodeSequenceRepository sequences;
@@ -88,7 +92,7 @@ public class ExpertService {
         Map<UUID, String> deptNames = departmentNames(page.getContent().stream().map(Expert::getDepartmentId).collect(Collectors.toSet()));
         return PageResponse.of(page, e -> new ExpertSummary(e.getId(), e.getCode(), e.getFullName(), e.getExpertType(),
                 e.getEmploymentType(), e.getStatus(), deptNames.get(e.getDepartmentId()), e.getEmail(), e.getPhone(),
-                e.getUpdatedAt()));
+                e.getUpdatedAt(), e.getSuspendedUntil()));
     }
 
     // ------------------------------------------------------------ CRUD
@@ -134,9 +138,16 @@ public class ExpertService {
 
     @Transactional
     public ExpertDetail update(UUID id, ExpertRequest r) {
-        Expert e = access.requireEdit(id);
+        boolean general = SecurityUtils.currentUser().has("EXPERT_EDIT");
+        Expert e = general ? access.requireEdit(id) : access.requireContactEdit(id);
         ExpertDetail before = detail(e);
-        apply(e, r, access.editAll());
+        if (general) {
+            apply(e, r, access.editAll());
+        } else {                                   // chuyên gia: chỉ thông tin liên hệ
+            e.setPhone(blank(r.phone()));
+            e.setEmail(blank(r.email()));
+            e.setAddress(blank(r.address()));
+        }
         e.setUpdatedBy(SecurityUtils.currentUser().id());
         experts.flush();
         ExpertDetail after = detail(e);
@@ -144,18 +155,50 @@ public class ExpertService {
         return after;
     }
 
-    /** Chuyển trạng thái theo workflow EXPERT (cấu hình trong DB, trigger DB kiểm tra lại). */
+    /**
+     * Chuyển trạng thái theo workflow EXPERT (cấu hình trong DB, trigger DB kiểm tra lại).
+     * SUBMIT: NV hồ sơ trình duyệt (hồ sơ phải đủ tối thiểu). APPROVE / RETURN: GĐCN.
+     * SUSPEND có thể kèm suspendedUntil (ngày cuối bị dừng) – hết hạn hệ thống tự mở lại.
+     */
     @Transactional
-    public ExpertDetail changeStatus(UUID id, String action, String comment) {
+    public ExpertDetail changeStatus(UUID id, String action, String comment, LocalDate suspendedUntil) {
         Expert e = access.requireView(id);
         if (!SecurityUtils.currentUser().hasAll("EXPERT_VIEW")) throw ApiException.forbidden("Không được tự đổi trạng thái");
-        var result = workflow.apply("EXPERT", "EXPERT", id, e.getStatus(), action, comment, Map.of());
+        if ("SUSPEND".equals(action) && (comment == null || comment.isBlank())) {
+            throw ApiException.badRequest("Thao tác SUSPEND bắt buộc nhập lý do");
+        }
+        if (suspendedUntil != null) {
+            if (!"SUSPEND".equals(action)) throw ApiException.badRequest("Chỉ nhập thời hạn khi dừng đánh giá");
+            if (!suspendedUntil.isAfter(LocalDate.now())) throw ApiException.badRequest("Ngày dừng đến phải sau hôm nay");
+        }
+        Map<String, UUID> actors = new HashMap<>();
+        if ("APPROVE".equals(action)) {
+            workflow.history("EXPERT", id).stream().filter(h -> "SUBMIT".equals(h.getAction())).findFirst()
+                    .ifPresent(h -> actors.put("SUBMITTER", h.getActorId()));
+        }
+        String note = suspendedUntil == null ? comment
+                : (comment == null ? "" : comment + " ") + "(dừng đến hết " + suspendedUntil.format(DMY) + ")";
+        var result = workflow.apply("EXPERT", "EXPERT", id, e.getStatus(), action, note, actors);   // kiểm quyền trước
+        if ("SUBMIT".equals(action)) requireComplete(e);           // lỗi → rollback cả lịch sử vừa ghi
+        e.setSuspendedUntil("SUSPEND".equals(action) ? suspendedUntil : null);
         e.setStatus(result.toStatus());
-        e.setStatusReason(comment);
+        e.setStatusReason(note);
         e.setUpdatedBy(SecurityUtils.currentUser().id());
         experts.flush();
-        audit.record(action, "EXPERT", id, result.fromStatus(), result.toStatus(), comment);
+        audit.record(action, "EXPERT", id, result.fromStatus(), result.toStatus(), note);
         return detail(e);
+    }
+
+    /** Điều kiện tối thiểu để nộp hồ sơ. */
+    private void requireComplete(Expert e) {
+        List<String> missing = new ArrayList<>();
+        if (e.getDateOfBirth() == null) missing.add("ngày sinh");
+        if (e.getPhone() == null) missing.add("số điện thoại");
+        if (educations.countByExpertId(e.getId()) == 0) missing.add("ít nhất 1 học vấn");
+        if (experiences.countByExpertId(e.getId()) == 0) missing.add("ít nhất 1 kinh nghiệm");
+        if (!missing.isEmpty()) {
+            throw ApiException.businessRule("Hồ sơ chưa đủ để nộp, còn thiếu: " + String.join(", ", missing));
+        }
     }
 
     @Transactional(readOnly = true)
@@ -238,13 +281,17 @@ public class ExpertService {
                 educations.countByExpertId(e.getId()), experiences.countByExpertId(e.getId()),
                 trainings.countByExpertId(e.getId()), certificates.countByExpertId(e.getId()),
                 documents.countByOwnerExpertId(e.getId()));
-        List<String> actions = SecurityUtils.currentUserOptional().filter(u -> u.hasAll("EXPERT_VIEW")).isPresent()
-                ? workflow.availableActions("EXPERT", e.getStatus()) : List.of();
+        List<String> actions = availableActions(e);
         return new ExpertDetail(e.getId(), e.getCode(), e.getFullName(), e.getDateOfBirth(), e.getGender(),
                 e.getIdNumber(), e.getAddress(), e.getPhone(), e.getEmail(), e.getExpertType(), e.getEmploymentType(),
                 e.getDepartmentId(), dept, e.getPosition(), e.getJoinedDate(), e.getHomeLocationId(), loc, e.getUserId(),
-                username, e.getMaxMandaysPerMonth(), e.getStatus(), e.getStatusReason(), actions, e.getCreatedAt(),
+                username, e.getMaxMandaysPerMonth(), e.getStatus(), e.getStatusReason(), e.getSuspendedUntil(), actions, e.getCreatedAt(),
                 e.getUpdatedAt(), counts);
+    }
+
+    private List<String> availableActions(Expert e) {
+        return SecurityUtils.currentUserOptional().filter(u -> u.hasAll("EXPERT_VIEW")).isPresent()
+                ? workflow.availableActions("EXPERT", e.getStatus()) : List.of();
     }
 
     private Map<UUID, String> departmentNames(Set<UUID> ids) {
@@ -253,7 +300,7 @@ public class ExpertService {
         return out;
     }
 
-    static String stripAccents(String s) {
+    public static String stripAccents(String s) {
         String n = Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
         return n.replace('đ', 'd').replace('Đ', 'D');
     }

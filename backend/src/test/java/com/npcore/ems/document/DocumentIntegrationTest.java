@@ -231,4 +231,26 @@ class DocumentIntegrationTest extends AbstractIntegrationTest {
         expectError(post("/document-versions/" + ownDoc.path("currentVersion").path("id").asText() + "/verify", token, null),
                 HttpStatus.FORBIDDEN, "FORBIDDEN");
     }
+
+    @Test
+    void keywordSearchMatchesTitleFileTypeAndExpertWithoutAccents() {
+        String tag = uniq("kw").toLowerCase();
+        String expertId = createExpert(manager.token(), "Trịnh Đức Thắng " + tag, "FULLTIME", null).path("id").asText();
+        Map<String, Object> f = new HashMap<>();
+        f.put("documentTypeCode", "CERTIFICATE");
+        f.put("title", "Chứng chỉ Lead Auditor ISO 9001");
+        f.put("ownerExpertId", expertId);
+        f.put("expiryDate", "2030-01-01");
+        expect(uploadMultipart("/documents", manager.token(), "bang-ky-su-" + tag + ".pdf", randomBytes(), f), HttpStatus.CREATED);
+
+        java.util.function.Function<String, Long> hits = q -> getJson("/documents?q=" + q, manager.token())
+                .path("totalElements").asLong();
+        assertThat(hits.apply("chung chi lead " + tag)).isEqualTo(1);           // tiêu đề không dấu + tên chuyên gia
+        assertThat(hits.apply("thang " + tag)).isEqualTo(1);                     // họ tên không dấu
+        assertThat(hits.apply("bang-ky-su-" + tag)).isEqualTo(1);                // tên file
+        assertThat(hits.apply("CHỨNG CHỈ " + tag)).isEqualTo(1);                 // tên loại tài liệu, có dấu, chữ hoa
+        assertThat(hits.apply("iso 14001 " + tag)).isZero();                     // mọi từ đều phải khớp
+        assertThat(getJson("/documents?ownerExpertId=" + expertId + "&q=9001", manager.token())
+                .path("totalElements").asLong()).isEqualTo(1);
+    }
 }

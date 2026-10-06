@@ -11,7 +11,7 @@ spring:
   application:
     name: ems-backend
   datasource:
-    url: ${EMS_DB_URL:jdbc:postgresql://localhost:5432/ems}
+    url: ${EMS_DB_URL:jdbc:postgresql://localhost:5440/ems}
     username: ${EMS_DB_USER:ems}
     password: ${EMS_DB_PASSWORD:ems}
     hikari:

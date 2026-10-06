@@ -92,7 +92,7 @@ public class ExpertController {
     }
 
     @PostMapping(path = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('EXPERT_CREATE')")
+    @PreAuthorize("hasAuthority('EXPERT_CREATE') and hasAuthority('EXPERT_COMPETENCY_EDIT')")
     public ImportResult importFile(@RequestPart("file") MultipartFile file) {
         return importer.importFile(file);
     }
@@ -103,14 +103,14 @@ public class ExpertController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('EXPERT_EDIT')")
+    @PreAuthorize("hasAnyAuthority('EXPERT_EDIT', 'EXPERT_CONTACT_EDIT')")
     public ExpertDetail update(@PathVariable UUID id, @RequestBody @Valid ExpertRequest req) {
         return experts.update(id, req);
     }
 
     @PostMapping("/{id}/status")
     public ExpertDetail changeStatus(@PathVariable UUID id, @RequestBody @Valid StatusRequest req) {
-        return experts.changeStatus(id, req.action(), req.comment());
+        return experts.changeStatus(id, req.action(), req.comment(), req.suspendedUntil());
     }
 
     @GetMapping("/{id}/history")

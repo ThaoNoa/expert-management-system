@@ -33,7 +33,10 @@ docker compose up -d --build
 
 > `admin` (SUPER_ADMIN) chỉ quản trị hệ thống: tạo user, phân quyền, cấu hình, danh mục. Theo nguyên tắc tách biệt nhiệm vụ,
 > SUPER_ADMIN **không** tạo chuyên gia hay phê duyệt. Hãy tạo user với role `CERTIFICATION_MANAGER` (lập hồ sơ),
-> `DOCUMENT_CONTROLLER` (tài liệu), `CERTIFICATION_DIRECTOR` (kích hoạt / dừng chuyên gia).
+> `DOCUMENT_CONTROLLER` (tài liệu), `CERTIFICATION_DIRECTOR` (GĐCN: phê duyệt / trả lại hồ sơ, dừng / mở chuyên gia).
+>
+> Quy trình hồ sơ năng lực: **NV hồ sơ lập hồ sơ → Trình phê duyệt → GĐCN Phê duyệt** (Đang hoạt động) hoặc
+> **Trả lại / yêu cầu bổ sung** (về Nháp, kèm nội dung). GĐCN có thể **dừng đánh giá có thời hạn**; hết hạn hệ thống tự mở lại.
 
 ## 2. Ứng dụng desktop
 
@@ -91,7 +94,7 @@ xác nhận phần dùng các thư viện còn lại.
   bộ mã có version + cây code + import Excel/CSV (all-or-nothing), ngành, hoạt động, địa điểm, lĩnh vực đào tạo.
 - Kho tài liệu: chống trùng SHA-256, version, liên kết một tài liệu cho nhiều đối tượng, xác minh bởi người khác người upload.
 - Hồ sơ chuyên gia: mã FT-/PT- tự sinh theo cấu hình, học vấn, kinh nghiệm (không tự tăng số năm), đào tạo,
-  chứng chỉ có cảnh báo hết hạn 60/30/7 ngày (cấu hình), ngôn ngữ, trạng thái DRAFT/ACTIVE/SUSPENDED/INACTIVE,
+  chứng chỉ có cảnh báo hết hạn 60/30/7 ngày (cấu hình), ngôn ngữ, trạng thái Nháp / Chờ GĐCN phê duyệt / Hoạt động / Tạm dừng (có thời hạn) / Ngừng,
   tìm kiếm không dấu phía server, import hồ sơ cũ (báo lỗi từng dòng).
 
 ## Ứng dụng desktop gồm

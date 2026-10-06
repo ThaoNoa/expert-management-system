@@ -9,7 +9,7 @@ services:
       POSTGRES_DB: ems
       POSTGRES_USER: ems
       POSTGRES_PASSWORD: ${EMS_DB_PASSWORD:-ems}
-    ports: ["5432:5432"]
+    ports: ["${EMS_DB_PORT:-5440}:5432"]   # 5440 để không đụng PostgreSQL cài sẵn trên máy (thường 5432-5434)
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ems -d ems"]

@@ -28,7 +28,7 @@ public class LanguageService {
 
     @Transactional
     public LanguageDto upsert(UUID expertId, String language, LanguageRequest r) {
-        access.requireEdit(expertId);
+        access.requireCompetencyEdit(expertId);
         String lang = language.trim().toLowerCase(Locale.ROOT);
         if (!lang.matches("[a-z]{2}")) throw ApiException.badRequest("Mã ngôn ngữ phải theo ISO 639-1 (VD: vi, en)");
         ExpertLanguage l = repo.findById(new ExpertLanguage.Key(expertId, lang)).orElseGet(() -> {
@@ -48,7 +48,7 @@ public class LanguageService {
 
     @Transactional
     public void delete(UUID expertId, String language) {
-        access.requireEdit(expertId);
+        access.requireCompetencyEdit(expertId);
         ExpertLanguage l = repo.findById(new ExpertLanguage.Key(expertId, language.toLowerCase(Locale.ROOT)))
                 .orElseThrow(() -> ApiException.notFound("Ngôn ngữ", language));
         audit.record("DELETE", "EXPERT_LANGUAGE", expertId, toDto(l), null, language);

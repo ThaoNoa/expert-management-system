@@ -54,7 +54,11 @@ public final class MainWindow extends BorderPane implements Navigator {
         setLeft(navigation());
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.ALL_TABS);
         setCenter(tabs);
-        open("dashboard", "Tổng quan", () -> new DashboardView(session, this));
+        if (staff()) {
+            open("dashboard", "Tổng quan", () -> new DashboardView(session, this));
+        } else if (session.me().expertId() != null) {               // chuyên gia: vào thẳng hồ sơ của mình
+            open("me", "Hồ sơ của tôi", () -> new ExpertDetailView(session, this, null));
+        }
     }
 
     private Node header(Consumer<Session> onLogout) {
@@ -80,15 +84,24 @@ public final class MainWindow extends BorderPane implements Navigator {
         return bar;
     }
 
+    /** Nhân sự nội bộ xem được toàn bộ chuyên gia (khác tài khoản chuyên gia – chỉ thấy hồ sơ của mình). */
+    private boolean staff() {
+        return session.hasAll("EXPERT_VIEW");
+    }
+
     private Node navigation() {
         TreeItem<Nav> root = new TreeItem<>(new Nav("root", "EMS", null));
-        root.getChildren().add(leaf("dashboard", "Tổng quan", () -> new DashboardView(session, this)));
+        if (staff()) root.getChildren().add(leaf("dashboard", "Tổng quan", () -> new DashboardView(session, this)));
 
         TreeItem<Nav> experts = group("Chuyên gia");
         if (session.hasAll("EXPERT_VIEW")) {
             experts.getChildren().add(leaf("experts", "Danh sách chuyên gia", () -> new ExpertListView(session, this)));
+            if (session.has("EXPERT_APPROVE")) {
+                experts.getChildren().add(leaf("experts-pending", "Chờ phê duyệt",
+                        () -> new ExpertListView(session, this, "SUBMITTED", "Hồ sơ chờ GĐCN phê duyệt")));
+            }
         }
-        if (session.has("EXPERT_CREATE")) {
+        if (session.has("EXPERT_CREATE") && session.has("EXPERT_COMPETENCY_EDIT")) {
             experts.getChildren().add(leaf("expert-import", "Import hồ sơ", () -> new ExpertImportView(session)));
         }
         if (session.me().expertId() != null) {
@@ -96,8 +109,8 @@ public final class MainWindow extends BorderPane implements Navigator {
         }
         addIfAny(root, experts);
 
-        if (session.hasAny("DOCUMENT_MANAGE", "DOCUMENT_VERIFY")) {
-            root.getChildren().add(leaf("documents", "Tài liệu", () -> new DocumentListView(session)));
+        if (staff() && session.hasAny("DOCUMENT_MANAGE", "DOCUMENT_VERIFY")) {
+            root.getChildren().add(leaf("documents", "Tài liệu chuyên gia", () -> new DocumentListView(session)));
         }
 
         TreeItem<Nav> master = group("Danh mục");
@@ -111,7 +124,7 @@ public final class MainWindow extends BorderPane implements Navigator {
                 leaf("activities", "Hoạt động", () -> CatalogViews.activities(session)),
                 leaf("locations", "Địa điểm", () -> CatalogViews.locations(session)),
                 leaf("education-fields", "Lĩnh vực đào tạo", () -> CatalogViews.educationFields(session)));
-        root.getChildren().add(master);
+        if (staff() || session.has("MASTER_DATA_MANAGE")) root.getChildren().add(master);   // chuyên gia không thấy danh mục
 
         TreeItem<Nav> admin = group("Quản trị");
         if (session.has("USER_MANAGE")) {

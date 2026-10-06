@@ -2,6 +2,7 @@
 backend/target/
 desktop/target/
 backend/data/
+/data/
 *.class
 *.log
 

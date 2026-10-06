@@ -105,3 +105,11 @@
 }
 .login-title { -fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: -ems-accent; }
 .server-pane .title { -fx-background-color: transparent; }
+
+/* ---------- thông báo trạng thái hồ sơ ---------- */
+.banner { -fx-padding: 6 10 6 10; -fx-background-radius: 4; -fx-font-size: 12.5px; }
+.banner-warn { -fx-background-color: #fff3dc; -fx-text-fill: #8a5a00; }
+.banner-info { -fx-background-color: #e7effc; -fx-text-fill: #174a96; }
+.list-cell:selected .hint { -fx-text-fill: #dbe7fb; }
+.cell-title { -fx-font-weight: bold; }
+.list-cell:selected .cell-title { -fx-text-fill: white; }

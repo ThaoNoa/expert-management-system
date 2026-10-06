@@ -155,7 +155,7 @@ public class DocumentService {
             List<Predicate> ps = new ArrayList<>();
             if (restrictOwner != null) ps.add(cb.equal(root.get("ownerExpertId"), restrictOwner));
             if (typeCode != null && !typeCode.isBlank()) ps.add(cb.equal(root.get("type").get("code"), typeCode));
-            if (q != null && !q.isBlank()) ps.add(cb.like(cb.lower(root.get("title")), "%" + q.toLowerCase(Locale.ROOT) + "%"));
+            if (q != null && !q.isBlank()) ps.add(keywordPredicate(root, query, cb, q));
             if (status != null && !status.isBlank()) {
                 var sub = query.subquery(UUID.class);
                 var vr = sub.from(DocumentVersion.class);
@@ -171,6 +171,35 @@ public class DocumentService {
                 .stream().collect(Collectors.toMap(DocumentVersion::getId, Function.identity()));
         Map<UUID, String> names = expertNames(page.getContent().stream().map(Document::getOwnerExpertId).toList());
         return PageResponse.of(page, d -> summary(d, current.get(d.getCurrentVersionId()), names.get(d.getOwnerExpertId())));
+    }
+
+    /**
+     * Tìm theo cụm từ: mọi từ trong q đều phải xuất hiện (không phân biệt hoa thường, có dấu / không dấu)
+     * ở tiêu đề, tên loại tài liệu, tên file của một phiên bản bất kỳ, hoặc họ tên / mã chuyên gia sở hữu.
+     */
+    private static Predicate keywordPredicate(jakarta.persistence.criteria.Root<Document> root,
+                                              jakarta.persistence.criteria.CriteriaQuery<?> query,
+                                              jakarta.persistence.criteria.CriteriaBuilder cb, String q) {
+        List<Predicate> all = new ArrayList<>();
+        for (String word : com.npcore.ems.expert.ExpertService.stripAccents(q.trim().toLowerCase(Locale.ROOT)).split("\\s+")) {
+            String like = "%" + word.replace("%", "\\%").replace("_", "\\_") + "%";
+            var title = cb.function("f_unaccent", String.class, cb.lower(root.get("title")));
+            var typeName = cb.function("f_unaccent", String.class, cb.lower(root.get("type").get("name")));
+
+            var fileSub = query.subquery(UUID.class);
+            var v = fileSub.from(DocumentVersion.class);
+            fileSub.select(v.get("id")).where(cb.equal(v.get("documentId"), root.get("id")),
+                    cb.like(cb.function("f_unaccent", String.class, cb.lower(v.get("fileName"))), like, '\\'));
+
+            var expertSub = query.subquery(UUID.class);
+            var e = expertSub.from(com.npcore.ems.expert.Expert.class);
+            expertSub.select(e.get("id")).where(cb.equal(e.get("id"), root.get("ownerExpertId")), cb.or(
+                    cb.like(cb.function("f_unaccent", String.class, cb.lower(e.get("fullName"))), like, '\\'),
+                    cb.like(cb.lower(e.get("code")), like, '\\')));
+
+            all.add(cb.or(cb.like(title, like, '\\'), cb.like(typeName, like, '\\'), cb.exists(fileSub), cb.exists(expertSub)));
+        }
+        return cb.and(all.toArray(Predicate[]::new));
     }
 
     @Transactional(readOnly = true)

@@ -52,11 +52,14 @@ public class Expert {
     private String position;
     @Column(name = "joined_date")
     private LocalDate joinedDate;
-    /** DRAFT | ACTIVE | SUSPENDED | INACTIVE - độc lập với trạng thái từng năng lực (BR-4.3.1). */
+    /** DRAFT | SUBMITTED | ACTIVE | SUSPENDED | INACTIVE - độc lập với trạng thái từng năng lực (BR-4.3.1). */
     @Column(nullable = false)
     private String status = "DRAFT";
     @Column(name = "status_reason")
     private String statusReason;
+    /** Ngày cuối cùng bị dừng đánh giá (null = dừng tới khi GĐCN mở lại). */
+    @Column(name = "suspended_until")
+    private LocalDate suspendedUntil;
     @Column(name = "max_mandays_per_month", precision = 4, scale = 1)
     private BigDecimal maxMandaysPerMonth;
     @Column(name = "deleted_at")

@@ -29,6 +29,12 @@ public final class UploadDialog {
      */
     public static void open(Session session, Lookups lookups, UUID fixedOwner, List<ExpertSummary> experts,
                             Consumer<UploadResult> onDone) {
+        open(session, lookups, fixedOwner, null, experts, onDone);
+    }
+
+    /** ownerLabel: tên chuyên gia hiển thị trên tiêu đề hộp thoại (khi fixedOwner != null). */
+    public static void open(Session session, Lookups lookups, UUID fixedOwner, String ownerLabel,
+                            List<ExpertSummary> experts, Consumer<UploadResult> onDone) {
         Path[] chosen = new Path[1];
         Form f = new Form();
         f.choice("type", "Loại tài liệu", lookups.documentTypeOptions(), true)
@@ -59,7 +65,7 @@ public final class UploadDialog {
         HBox fileRow = new HBox(8, new Label("File *"), path, browse);
         f.node().getChildren().add(1, fileRow);
 
-        f.showDialog("Upload tài liệu", "Upload", () -> {
+        f.showDialog(ownerLabel == null ? "Tải tài liệu lên" : "Tải tài liệu lên – " + ownerLabel, "Tải lên", () -> {
             if (chosen[0] == null) {
                 throw new com.npcore.ems.desktop.api.ApiException(400, "VALIDATION_ERROR", "Chưa chọn file", null);
             }

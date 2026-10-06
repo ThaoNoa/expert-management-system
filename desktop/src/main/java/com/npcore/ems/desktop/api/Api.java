@@ -194,10 +194,11 @@ public final class Api {
 
     public ExpertDetail updateExpert(UUID id, ExpertRequest r) { return c.put("/experts/" + id, r, ExpertDetail.class); }
 
-    public ExpertDetail changeExpertStatus(UUID id, String action, String comment) {
+    public ExpertDetail changeExpertStatus(UUID id, String action, String comment, LocalDate suspendedUntil) {
         Map<String, Object> b = new LinkedHashMap<>();
         b.put("action", action);
         b.put("comment", comment);
+        b.put("suspendedUntil", suspendedUntil);
         return c.post("/experts/" + id + "/status", b, ExpertDetail.class);
     }
 

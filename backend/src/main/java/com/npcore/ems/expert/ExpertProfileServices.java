@@ -1,5 +1,7 @@
 package com.npcore.ems.expert;
 
+import com.npcore.ems.shared.security.SecurityUtils;
+
 import com.npcore.ems.expert.ExpertDtos.CertificateDto;
 import com.npcore.ems.expert.ExpertDtos.CertificateRequest;
 import com.npcore.ems.expert.ExpertDtos.EducationDto;
@@ -60,7 +62,7 @@ public final class ExpertProfileServices {
             e.setGraduationYear(r.graduationYear());
             e.setEvidenceDocumentId(r.evidenceDocumentId());
             // chỉ người có quyền trên toàn bộ dữ liệu mới xác nhận học vấn
-            if (r.verified() != null && access.editAll()) e.setVerified(r.verified());
+            if (r.verified() != null && SecurityUtils.currentUser().hasAll("EXPERT_COMPETENCY_EDIT")) e.setVerified(r.verified());
         }
 
         @Override
