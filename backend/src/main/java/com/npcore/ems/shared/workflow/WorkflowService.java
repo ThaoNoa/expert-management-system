@@ -82,7 +82,7 @@ public class WorkflowService {
 
     private static String decisionOf(String action) {
         return switch (action) {
-            case "APPROVE", "VERIFY", "ACTIVATE", "REACTIVATE", "CONFIRM" -> "APPROVED";
+            case "APPROVE", "VERIFY", "REVIEW", "ACTIVATE", "REACTIVATE", "CONFIRM" -> "APPROVED";
             case "RETURN" -> "RETURNED";
             case "REJECT" -> "REJECTED";
             case "SUBMIT" -> "SUBMITTED";

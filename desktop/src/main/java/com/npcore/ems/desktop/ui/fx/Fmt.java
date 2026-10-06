@@ -15,7 +15,7 @@ public final class Fmt {
 
     private static final Map<String, String> LABELS = Map.ofEntries(
             // trạng thái chuyên gia / chung
-            Map.entry("DRAFT", "Nháp"), Map.entry("SUBMITTED", "Chờ GĐCN phê duyệt"), Map.entry("ACTIVE", "Đang hoạt động"), Map.entry("SUSPENDED", "Tạm dừng đánh giá"),
+            Map.entry("DRAFT", "Nháp"), Map.entry("SUBMITTED", "Chờ thẩm tra"), Map.entry("REVIEWED", "Chờ GĐCN phê duyệt"), Map.entry("ACTIVE", "Đang hoạt động"), Map.entry("SUSPENDED", "Tạm dừng đánh giá"),
             Map.entry("INACTIVE", "Ngừng hoạt động"), Map.entry("DISABLED", "Vô hiệu hoá"), Map.entry("LOCKED", "Bị khoá"),
             Map.entry("RETIRED", "Hết hiệu lực"), Map.entry("TRANSITION", "Chuyển đổi"), Map.entry("WITHDRAWN", "Thu hồi"),
             // loại chuyên gia / hợp đồng
@@ -31,7 +31,7 @@ public final class Fmt {
             Map.entry("NONE", ""), Map.entry("WARNING", "Sắp hết hạn"), Map.entry("HIGH", "Sắp hết hạn (cao)"),
             Map.entry("CRITICAL", "Sắp hết hạn (khẩn)"),
             // hành động trạng thái
-            Map.entry("SUBMIT", "Trình phê duyệt"), Map.entry("APPROVE", "Phê duyệt"),
+            Map.entry("SUBMIT", "Trình thẩm tra"), Map.entry("REVIEW", "Thẩm tra đạt"), Map.entry("APPROVE", "Phê duyệt"),
             Map.entry("RETURN", "Trả lại / yêu cầu bổ sung"), Map.entry("AUTO_REINSTATE", "Tự mở lại (hết hạn dừng)"),
             Map.entry("ACTIVATE", "Kích hoạt"), Map.entry("SUSPEND", "Dừng đánh giá"), Map.entry("REINSTATE", "Mở lại"),
             Map.entry("DEACTIVATE", "Ngừng hoạt động"), Map.entry("REACTIVATE", "Kích hoạt lại"),
@@ -74,7 +74,7 @@ public final class Fmt {
         if (code == null) return "muted";
         return switch (code) {
             case "ACTIVE", "VERIFIED", "VALID" -> "ok";
-            case "SUSPENDED", "SUBMITTED", "PENDING_VERIFICATION", "WARNING", "HIGH", "LOCKED" -> "warn";
+            case "SUSPENDED", "SUBMITTED", "REVIEWED", "PENDING_VERIFICATION", "WARNING", "HIGH", "LOCKED" -> "warn";
             case "CRITICAL", "EXPIRED", "REJECTED", "REVOKED", "DISABLED" -> "danger";
             default -> "muted";
         };

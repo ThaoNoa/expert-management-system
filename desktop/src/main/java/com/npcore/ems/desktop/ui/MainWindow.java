@@ -96,9 +96,13 @@ public final class MainWindow extends BorderPane implements Navigator {
         TreeItem<Nav> experts = group("Chuyên gia");
         if (session.hasAll("EXPERT_VIEW")) {
             experts.getChildren().add(leaf("experts", "Danh sách chuyên gia", () -> new ExpertListView(session, this)));
+            if (session.has("EXPERT_REVIEW")) {
+                experts.getChildren().add(leaf("experts-review", "Chờ thẩm tra",
+                        () -> new ExpertListView(session, this, "SUBMITTED", "Hồ sơ chờ Chuyên gia trưởng thẩm tra")));
+            }
             if (session.has("EXPERT_APPROVE")) {
                 experts.getChildren().add(leaf("experts-pending", "Chờ phê duyệt",
-                        () -> new ExpertListView(session, this, "SUBMITTED", "Hồ sơ chờ GĐCN phê duyệt")));
+                        () -> new ExpertListView(session, this, "REVIEWED", "Hồ sơ đã thẩm tra, chờ GĐCN phê duyệt")));
             }
         }
         if (session.has("EXPERT_CREATE") && session.has("EXPERT_COMPETENCY_EDIT")) {

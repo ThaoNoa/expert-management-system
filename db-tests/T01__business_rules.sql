@@ -49,7 +49,8 @@ VALUES ('FT-0001','Nguyễn Văn A','AUDITOR','FULLTIME','DRAFT'),
        ('PT-001','Lê Văn C','TECHNICAL_EXPERT','PARTTIME','DRAFT'),
        ('PT-002','Phạm D (hết hạn)','AUDITOR','PARTTIME','DRAFT');
 INSERT INTO ids SELECT expert_code, expert_id FROM experts;
-UPDATE experts SET status = 'SUBMITTED';   -- V13: DRAFT -> SUBMITTED -> ACTIVE (GĐCN phê duyệt)
+UPDATE experts SET status = 'SUBMITTED';   -- DRAFT -> SUBMITTED -> REVIEWED (CG trưởng) -> ACTIVE (GĐCN)
+UPDATE experts SET status = 'REVIEWED';
 UPDATE experts SET status = 'ACTIVE';
 
 -- Duyệt competency qua đúng workflow

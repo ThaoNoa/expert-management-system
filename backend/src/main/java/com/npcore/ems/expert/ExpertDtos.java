@@ -50,7 +50,7 @@ public final class ExpertDtos {
                                LocalDate suspendedUntil, List<String> availableActions, OffsetDateTime createdAt, OffsetDateTime updatedAt,
                                Counts counts) {}
 
-    public record StatusRequest(@NotBlank @Pattern(regexp = "SUBMIT|APPROVE|RETURN|SUSPEND|REINSTATE|DEACTIVATE|REACTIVATE") String action,
+    public record StatusRequest(@NotBlank @Pattern(regexp = "SUBMIT|REVIEW|APPROVE|RETURN|SUSPEND|REINSTATE|DEACTIVATE|REACTIVATE") String action,
                                 @Size(max = 2000) String comment,
                                 LocalDate suspendedUntil) {}
 
