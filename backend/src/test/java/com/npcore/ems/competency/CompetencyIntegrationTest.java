@@ -21,11 +21,13 @@ class CompetencyIntegrationTest extends AbstractIntegrationTest {
 
     private TestUser manager;
     private TestUser reviewer;
+    private TestUser director;
 
     @BeforeEach
     void setUp() {
         manager = createUserWithRoles("CERTIFICATION_MANAGER");
         reviewer = createUserWithRoles("TECHNICAL_REVIEWER");
+        director = createUserWithRoles("CERTIFICATION_DIRECTOR");
     }
 
     @Test
@@ -92,10 +94,10 @@ class CompetencyIntegrationTest extends AbstractIntegrationTest {
         JsonNode reviewBody = postJson("/experts/" + expertId + "/competencies/" + compId + "/actions", reviewer.token(), startReviewReq, HttpStatus.OK);
         assertThat(reviewBody.path("status").asText()).isEqualTo("UNDER_REVIEW");
 
-        // 8. Workflow: APPROVE (bởi reviewer - có quyền COMPETENCY_APPROVE)
+        // 8. Workflow: APPROVE (bởi director - CERTIFICATION_DIRECTOR có quyền COMPETENCY_APPROVE)
         Map<String, Object> approveReq = new HashMap<>();
         approveReq.put("action", "APPROVE");
-        JsonNode approvedBody = postJson("/experts/" + expertId + "/competencies/" + compId + "/actions", reviewer.token(), approveReq, HttpStatus.OK);
+        JsonNode approvedBody = postJson("/experts/" + expertId + "/competencies/" + compId + "/actions", director.token(), approveReq, HttpStatus.OK);
         assertThat(approvedBody.path("status").asText()).isEqualTo("APPROVED");
         assertThat(approvedBody.path("effectiveFrom").asText()).isEqualTo(LocalDate.now().toString());
 
