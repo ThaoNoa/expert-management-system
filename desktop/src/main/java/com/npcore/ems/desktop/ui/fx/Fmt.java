@@ -36,6 +36,12 @@ public final class Fmt {
             Map.entry("ACTIVATE", "Kích hoạt"), Map.entry("SUSPEND", "Dừng đánh giá"), Map.entry("REINSTATE", "Mở lại"),
             Map.entry("DEACTIVATE", "Ngừng hoạt động"), Map.entry("REACTIVATE", "Kích hoạt lại"),
             Map.entry("CREATE", "Tạo mới"), Map.entry("UPDATE", "Cập nhật"), Map.entry("IMPORT", "Import"),
+            // năng lực
+            Map.entry("UNDER_REVIEW", "Đang thẩm tra"), Map.entry("NEED_REVISION", "Cần bổ sung"),
+            Map.entry("APPROVED", "Đã phê duyệt"), Map.entry("REVIEW_REQUIRED", "Cần rà soát lại"),
+            Map.entry("START_REVIEW", "Bắt đầu thẩm tra"), Map.entry("WITHDRAW", "Rút lại"),
+            Map.entry("REJECT", "Từ chối"), Map.entry("REVOKE", "Thu hồi"), Map.entry("CONFIRM", "Xác nhận"),
+            Map.entry("IN_TRAINING", "Đang đào tạo"), Map.entry("QUALIFIED", "Đạt"), Map.entry("SENIOR", "Cao cấp"),
             // đào tạo / ngôn ngữ
             Map.entry("LEAD_AUDITOR", "Lead Auditor"), Map.entry("INTERNAL_AUDITOR", "Đánh giá viên nội bộ"),
             Map.entry("TECHNICAL", "Kỹ thuật"), Map.entry("CALIBRATION", "Hiệu chuẩn"), Map.entry("REFRESHER", "Cập nhật kiến thức"),
@@ -73,8 +79,8 @@ public final class Fmt {
     public static String tone(String code) {
         if (code == null) return "muted";
         return switch (code) {
-            case "ACTIVE", "VERIFIED", "VALID" -> "ok";
-            case "SUSPENDED", "SUBMITTED", "REVIEWED", "PENDING_VERIFICATION", "WARNING", "HIGH", "LOCKED" -> "warn";
+            case "ACTIVE", "VERIFIED", "VALID", "APPROVED" -> "ok";
+            case "SUSPENDED", "SUBMITTED", "REVIEWED", "UNDER_REVIEW", "NEED_REVISION", "REVIEW_REQUIRED", "PENDING_VERIFICATION", "WARNING", "HIGH", "LOCKED" -> "warn";
             case "CRITICAL", "EXPIRED", "REJECTED", "REVOKED", "DISABLED" -> "danger";
             default -> "muted";
         };

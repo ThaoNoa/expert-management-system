@@ -31,6 +31,11 @@ public class ExpertAccess {
         return unlocked(require(expertId, "EXPERT_COMPETENCY_EDIT"));
     }
 
+    /** Năng lực theo tiêu chuẩn / code (quy trình duyệt riêng, không khoá theo trạng thái hồ sơ). */
+    public Expert requireCompetencyManage(UUID expertId) {
+        return require(expertId, "EXPERT_COMPETENCY_EDIT");
+    }
+
     /** Chuyên gia tự sửa thông tin liên hệ của chính mình. */
     public Expert requireContactEdit(UUID expertId) {
         return require(expertId, "EXPERT_CONTACT_EDIT");

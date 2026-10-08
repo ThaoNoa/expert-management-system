@@ -248,6 +248,15 @@ public class CodeSetService {
         return cs;
     }
 
+    @Transactional(readOnly = true)
+    public List<CodeDto> listAllActiveCodes() {
+        List<Code> list = codes.findAll().stream()
+                .filter(c -> "ACTIVE".equals(c.getStatus()))
+                .toList();
+        Map<UUID, String> valueById = list.stream().collect(Collectors.toMap(Code::getId, Code::getValue, (a, b) -> a));
+        return list.stream().map(c -> toDto(c, valueById.get(c.getParentId()))).toList();
+    }
+
     private static CodeSetDto toDto(CodeSet c, long count) {
         return new CodeSetDto(c.getId(), c.getScheme().getId(), c.getScheme().getCode(), c.getVersion(),
                 c.getEffectiveFrom(), c.getEffectiveTo(), c.getSourceRef(), c.getStatus(), count);

@@ -15,6 +15,8 @@ import com.npcore.ems.desktop.ui.fx.Form;
 import com.npcore.ems.desktop.ui.master.CatalogViews;
 import com.npcore.ems.desktop.ui.master.CodeSetsView;
 import com.npcore.ems.desktop.ui.master.StandardsView;
+import com.npcore.ems.desktop.ui.competency.CompetencyDefinitionsView;
+import com.npcore.ems.desktop.ui.competency.CompetencyMatrixView;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javafx.geometry.Insets;
@@ -59,6 +61,32 @@ public final class MainWindow extends BorderPane implements Navigator {
         } else if (session.me().expertId() != null) {               // chuyên gia: vào thẳng hồ sơ của mình
             open("me", "Hồ sơ của tôi", () -> new ExpertDetailView(session, this, null));
         }
+        if (session.me().mustChangePassword()) {
+            // mật khẩu tạm (tạo khi import / quản trị đặt lại): bắt đổi trước khi dùng, huỷ = đăng xuất
+            javafx.application.Platform.runLater(() -> forceChangePassword(onLogout));
+        }
+    }
+
+    private void forceChangePassword(Consumer<Session> onLogout) {
+        Form f = passwordForm().note("Bạn đang dùng mật khẩu tạm. Hãy đặt mật khẩu mới để tiếp tục; bấm Huỷ sẽ đăng xuất.");
+        f.showDialog("Đổi mật khẩu lần đầu", "Đổi mật khẩu", () -> submitPassword(f), ok -> {
+            Dialogs.info("Đã đổi mật khẩu. Vui lòng đăng nhập lại bằng mật khẩu mới.");
+            onLogout.accept(session);
+        }, () -> onLogout.accept(session));
+    }
+
+    private Form passwordForm() {
+        return new Form().password("current", "Mật khẩu hiện tại", true).password("next", "Mật khẩu mới", true)
+                .password("confirm", "Nhập lại mật khẩu mới", true)
+                .note("Tối thiểu 8 ký tự, gồm chữ, số và ký tự đặc biệt.");
+    }
+
+    private Boolean submitPassword(Form f) {
+        if (!f.str("next").equals(f.str("confirm"))) {
+            throw new com.npcore.ems.desktop.api.ApiException(400, "VALIDATION_ERROR", "Mật khẩu nhập lại không khớp", null);
+        }
+        session.api().changePassword(f.str("current"), f.str("next"));
+        return Boolean.TRUE;
     }
 
     private Node header(Consumer<Session> onLogout) {
@@ -116,6 +144,13 @@ public final class MainWindow extends BorderPane implements Navigator {
         if (staff() && session.hasAny("DOCUMENT_MANAGE", "DOCUMENT_VERIFY")) {
             root.getChildren().add(leaf("documents", "Tài liệu chuyên gia", () -> new DocumentListView(session)));
         }
+
+        TreeItem<Nav> compGroup = group("Năng lực");
+        compGroup.getChildren().add(leaf("competency-matrix", "Ma trận năng lực", () -> new CompetencyMatrixView(session, this)));
+        if (session.has("MASTER_DATA_MANAGE")) {
+            compGroup.getChildren().add(leaf("competency-definitions", "Định nghĩa năng lực", () -> new CompetencyDefinitionsView(session)));
+        }
+        addIfAny(root, compGroup);
 
         TreeItem<Nav> master = group("Danh mục");
         master.getChildren().addAll(
@@ -185,16 +220,9 @@ public final class MainWindow extends BorderPane implements Navigator {
     }
 
     private void changePassword() {
-        Form f = new Form().password("current", "Mật khẩu hiện tại", true).password("next", "Mật khẩu mới", true)
-                .password("confirm", "Nhập lại mật khẩu mới", true)
-                .note("Tối thiểu 8 ký tự, gồm chữ, số và ký tự đặc biệt.");
-        f.showDialog("Đổi mật khẩu", "Đổi mật khẩu", () -> {
-            if (!f.str("next").equals(f.str("confirm"))) {
-                throw new com.npcore.ems.desktop.api.ApiException(400, "VALIDATION_ERROR", "Mật khẩu nhập lại không khớp", null);
-            }
-            session.api().changePassword(f.str("current"), f.str("next"));
-            return Boolean.TRUE;
-        }, ok -> Dialogs.info("Đã đổi mật khẩu. Các phiên đăng nhập khác sẽ phải đăng nhập lại."));
+        Form f = passwordForm();
+        f.showDialog("Đổi mật khẩu", "Đổi mật khẩu", () -> submitPassword(f),
+                ok -> Dialogs.info("Đã đổi mật khẩu. Các phiên đăng nhập khác sẽ phải đăng nhập lại."));
     }
 
     /** Dùng khi cần chạy tác vụ nền gắn với cửa sổ chính. */

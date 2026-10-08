@@ -113,8 +113,32 @@ public class UserService {
         passwordPolicy.check(newPassword);
         u.setPasswordHash(passwordEncoder.encode(newPassword));
         u.setPasswordChangedAt(OffsetDateTime.now());
+        u.setMustChangePassword(true);                 // mật khẩu do quản trị đặt = mật khẩu tạm
         refreshTokens.revokeAllOfUser(id, OffsetDateTime.now());
         audit.record("RESET_PASSWORD", "USER", id, null, null, null);
+    }
+
+    /**
+     * Tài khoản cho chuyên gia khi import hồ sơ: vai trò EXPERT, mật khẩu tạm, bắt đổi ở lần đăng nhập đầu.
+     * Người gọi (import) đã kiểm tra trùng tên đăng nhập / email trước để lỗi DB không làm hỏng transaction.
+     */
+    @Transactional
+    public User createExpertAccount(String username, String email, String fullName, UUID departmentId,
+                                    String position, String tempPassword) {
+        User u = new User();
+        u.setUsername(username);
+        u.setEmail(email);
+        u.setFullName(fullName);
+        u.setPosition(position);
+        u.setDepartment(departmentId == null ? null : departments.findById(departmentId).orElse(null));
+        u.setPasswordHash(passwordEncoder.encode(tempPassword));
+        u.setPasswordChangedAt(OffsetDateTime.now());
+        u.setMustChangePassword(true);
+        u.setRoles(new HashSet<>(resolveRoles(List.of("EXPERT"))));
+        u.setCreatedBy(SecurityUtils.currentUser().id());
+        users.save(u);
+        audit.record("CREATE", "USER", u.getId(), null, UserDto.from(u), "Tạo khi import hồ sơ chuyên gia");
+        return u;
     }
 
     /** BR-1.1.2: chỉ soft delete. */

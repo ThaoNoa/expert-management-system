@@ -218,7 +218,10 @@ public final class Api {
 
     public void deleteExpertItem(UUID expertId, String kind, Object itemId) { c.delete("/experts/" + expertId + "/" + kind + "/" + itemId); }
 
-    public ImportResult importExperts(Path file) { return c.upload("/experts/import", Map.of(), file, ImportResult.class); }
+    public ExpertImportResult importExperts(Path file, boolean createAccounts) {
+        return c.upload("/experts/import", Map.of("createAccounts", String.valueOf(createAccounts)), file,
+                ExpertImportResult.class);
+    }
 
     public Path downloadExpertTemplate(Path dir) { return c.download("/experts/import/template", dir, "expert-import-template.csv"); }
 
@@ -232,6 +235,68 @@ public final class Api {
     public List<Setting> settings() { return c.get("/settings", new TypeReference<List<Setting>>() {}); }
 
     public Setting updateSetting(String key, JsonNode value) { return c.put("/settings/" + key, Map.of("value", value), Setting.class); }
+
+    // ---------------------------------------------------------------- Competency
+    public Page<CompetencyDefinition> competencyDefinitions(UUID schemeId, UUID standardId, String status, int page, int size) {
+        return competencyDefinitions(standardId, null, status, null, page, size);
+    }
+
+    public Page<CompetencyDefinition> competencyDefinitions(UUID standardId, UUID roleId, String status, String q, int page, int size) {
+        return c.get("/competency-definitions" + ApiClient.query(params("standardId", standardId, "roleId", roleId,
+                "status", status, "q", q, "page", page, "size", size)), new TypeReference<Page<CompetencyDefinition>>() {});
+    }
+
+    public BulkResult createCompetencyDefinitionsBulk(BulkDefinitionRequest r) {
+        return c.post("/competency-definitions/bulk", r, BulkResult.class);
+    }
+
+    public List<CompetencyDefinition> activeCompetencyDefinitions(UUID standardId) {
+        return c.get("/competency-definitions/active" + ApiClient.query(params("standardId", standardId)),
+                new TypeReference<List<CompetencyDefinition>>() {});
+    }
+
+    public CompetencyDefinition createCompetencyDefinition(CompetencyDefinitionRequest r) {
+        return c.post("/competency-definitions", r, CompetencyDefinition.class);
+    }
+
+    public CompetencyDefinition updateCompetencyDefinition(UUID id, CompetencyDefinitionRequest r) {
+        return c.put("/competency-definitions/" + id, r, CompetencyDefinition.class);
+    }
+
+    public void activateCompetencyDefinition(UUID id) { c.post("/competency-definitions/" + id + "/activate", null); }
+
+    public void retireCompetencyDefinition(UUID id) { c.post("/competency-definitions/" + id + "/retire", null); }
+
+    public Page<ExpertCompetency> expertCompetencies(UUID expertId, String status, int page, int size) {
+        return c.get("/experts/" + expertId + "/competencies" + ApiClient.query(params("status", status, "page", page, "size", size)),
+                new TypeReference<Page<ExpertCompetency>>() {});
+    }
+
+    public ExpertCompetency expertCompetency(UUID expertId, UUID id) {
+        return c.get("/experts/" + expertId + "/competencies/" + id, ExpertCompetency.class);
+    }
+
+    public ExpertCompetency addExpertCompetency(UUID expertId, ExpertCompetencyRequest r) {
+        return c.post("/experts/" + expertId + "/competencies", r, ExpertCompetency.class);
+    }
+
+    public ExpertCompetency transitionExpertCompetency(UUID expertId, UUID id, String action, String comment) {
+        return c.post("/experts/" + expertId + "/competencies/" + id + "/actions",
+                new CompetencyActionRequest(action, comment), ExpertCompetency.class);
+    }
+
+    public Evidence addCompetencyEvidence(UUID expertId, UUID id, EvidenceRequest r) {
+        return c.post("/experts/" + expertId + "/competencies/" + id + "/evidences", r, Evidence.class);
+    }
+
+    public void removeCompetencyEvidence(UUID expertId, UUID id, UUID evidenceId) {
+        c.delete("/experts/" + expertId + "/competencies/" + id + "/evidences/" + evidenceId);
+    }
+
+    public MatrixResponse competencyMatrix(UUID standardId, UUID roleId, boolean includeExpired) {
+        return c.get("/competency-matrix" + ApiClient.query(params("standardId", standardId, "roleId", roleId,
+                "includeExpired", includeExpired)), MatrixResponse.class);
+    }
 
     private static String str(Object o) {
         return o == null ? null : o.toString();

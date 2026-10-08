@@ -113,3 +113,11 @@
 .list-cell:selected .hint { -fx-text-fill: #dbe7fb; }
 .cell-title { -fx-font-weight: bold; }
 .list-cell:selected .cell-title { -fx-text-fill: white; }
+
+/* ---------- ma trận năng lực ---------- */
+.table-cell.matrix-ok { -fx-background-color: #e3f6ea; -fx-text-fill: #146c3a; -fx-font-weight: bold; }
+.table-cell.matrix-inherited { -fx-background-color: #eef5ee; -fx-text-fill: #3d7a52; }
+.table-cell.matrix-soon { -fx-background-color: #fff3dc; -fx-text-fill: #8a5a00; -fx-font-weight: bold; }
+.table-cell.matrix-expired { -fx-background-color: #fde7e5; -fx-text-fill: #a51b0b; }
+.table-row-cell.matrix-suspended { -fx-background-color: #fff8e1; }
+.table-row-cell.matrix-suspended .text { -fx-fill: #8a5a00; }

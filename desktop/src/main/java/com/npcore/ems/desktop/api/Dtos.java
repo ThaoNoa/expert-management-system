@@ -14,13 +14,22 @@ public final class Dtos {
 
     // ---------------- Auth
     public record Me(UUID id, String username, String fullName, String email, List<String> roles,
-                     List<String> permissions, UUID expertId) {}
+                     List<String> permissions, UUID expertId, boolean mustChangePassword) {}
 
     public record TokenResponse(String accessToken, String refreshToken, long expiresIn, Me user) {}
 
     public record ImportResult(int total, int imported, int skipped, List<RowError> errors) {
         public record RowError(int row, String message) {}
     }
+
+    /** Import hồ sơ chuyên gia: thêm cảnh báo (không chặn dòng) và tài khoản đã tạo kèm mật khẩu tạm. */
+    public record ExpertImportResult(int total, int imported, int skipped, List<ImportResult.RowError> errors,
+                                     List<ImportResult.RowError> warnings, List<CreatedAccount> accounts) {
+        public ImportResult basic() { return new ImportResult(total, imported, skipped, errors); }
+    }
+
+    public record CreatedAccount(int row, String expertCode, String fullName, String username, String email,
+                                 String tempPassword) {}
 
     // ---------------- Users / roles
     public record User(UUID id, String username, String email, String fullName, UUID departmentId,
@@ -162,4 +171,56 @@ public final class Dtos {
                            String ipAddress) {}
 
     public record Setting(String key, JsonNode value, String valueType, String category, String description) {}
+
+    // ---------------- Competency
+    public record CompetencyDefinition(UUID id, UUID schemeId, String schemeCode, String schemeName,
+                                      UUID standardId, String standardCode, String standardName,
+                                      UUID codeId, String codeValue, String codeName,
+                                      UUID assessmentRoleId, String roleCode, String roleName,
+                                      Short defaultValidityMonths, LocalDate effectiveFrom, LocalDate effectiveTo,
+                                      String version, String status, JsonNode criteria) {}
+
+    public record CompetencyDefinitionRequest(UUID schemeId, UUID standardId, UUID codeId, UUID assessmentRoleId,
+                                             Short defaultValidityMonths, LocalDate effectiveFrom, LocalDate effectiveTo,
+                                             String version, String status, JsonNode criteria) {}
+
+    public record Evidence(UUID id, UUID expertCompetencyId, UUID documentId, String evidenceType,
+                           String sourceObjectType, UUID sourceObjectId, String description,
+                           OffsetDateTime createdAt) {}
+
+    public record EvidenceRequest(UUID documentId, String evidenceType, String sourceObjectType,
+                                 UUID sourceObjectId, String description) {}
+
+    public record ExpertCompetency(UUID id, UUID expertId, CompetencyDefinition definition, UUID standardVersionId,
+                                  String competencyLevel, String status, int revisionNo, LocalDate effectiveFrom,
+                                  LocalDate effectiveTo, LocalDate firstApprovedDate, UUID approvedBy,
+                                  OffsetDateTime approvedAt, UUID submittedBy, OffsetDateTime submittedAt,
+                                  String notes, OffsetDateTime createdAt, List<String> availableActions,
+                                  List<Evidence> evidences) {}
+
+    public record ExpertCompetencyRequest(UUID competencyDefinitionId, UUID standardId, UUID codeId,
+                                         UUID assessmentRoleId, UUID standardVersionId, String competencyLevel,
+                                         LocalDate effectiveFrom, LocalDate effectiveTo, String notes) {}
+
+    public record CompetencyActionRequest(String action, String comment) {}
+
+    public record BulkDefinitionRequest(UUID standardId, UUID assessmentRoleId, List<UUID> codeIds, boolean includeGeneral,
+                                        Short defaultValidityMonths, LocalDate effectiveFrom, String version,
+                                        JsonNode criteria) {}
+
+    public record BulkResult(int created, int skipped) {}
+
+    /** codeValue "*" = năng lực toàn tiêu chuẩn. */
+    public record MatrixColumn(UUID codeId, String codeValue, String codeName, String parentCode) {}
+
+    public record MatrixCell(UUID competencyId, UUID definitionId, String standardCode, String codeValue,
+                            String roleCode, String level, String status, LocalDate effectiveFrom,
+                            LocalDate effectiveTo, boolean expired, boolean expiringSoon, boolean inherited) {}
+
+    public record MatrixRow(UUID expertId, String expertCode, String expertName, String expertType,
+                            String employmentType, String expertStatus, LocalDate suspendedUntil,
+                            List<MatrixCell> cells) {}
+
+    public record MatrixResponse(UUID standardId, String standardCode, String standardName, boolean parentCoversChild,
+                                 List<MatrixColumn> columns, List<MatrixRow> rows) {}
 }
