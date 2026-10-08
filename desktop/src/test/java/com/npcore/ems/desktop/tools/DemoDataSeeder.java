@@ -80,16 +80,26 @@ public final class DemoDataSeeder {
                 user("cgtruong", "Chuyên gia trưởng", "PCN", "Chuyên gia trưởng – VICB.009", "TECHNICAL_REVIEWER");
                 System.out.println("Đã thêm tài khoản cgtruong (Chuyên gia trưởng), mật khẩu " + PASSWORD + ".");
             }
-            System.out.println("Đã có dữ liệu demo (user 'hang' tồn tại) – không nạp lại.");
-            return;
+            System.out.println("Đã có dữ liệu demo (user 'hang' tồn tại) – không nạp lại phần cơ bản.");
+            hang = login("hang", PASSWORD);
+            gdcn = login("gdcn", PASSWORD);
+            cgtruong = login("cgtruong", PASSWORD);
+        } else {
+            step("Danh mục", this::masterData);
+            step("Người dùng & vai trò", this::users);
+            step("Chuyên gia", this::experts);
         }
-        step("Danh mục", this::masterData);
-        step("Người dùng & vai trò", this::users);
-        step("Chuyên gia", this::experts);
+        if (admin.competencyDefinitions(null, null, null, 0, 1).totalElements() == 0) {
+            step("Định nghĩa năng lực", this::competencyDefinitions);
+            step("Năng lực chuyên gia (qua đủ quy trình duyệt)", this::expertCompetencies);
+        } else {
+            System.out.println("Đã có định nghĩa năng lực – không nạp lại phần năng lực.");
+        }
         System.out.println();
         System.out.println("XONG. Đăng nhập app để thử (mật khẩu chung: " + PASSWORD + "):");
         System.out.println("  hang      – Nhân viên hồ sơ chuyên gia (Phan Hằng): lập hồ sơ, trình phê duyệt");
-        System.out.println("  cgtruong  – Chuyên gia trưởng: thẩm tra hồ sơ (đạt / trả lại)");
+        System.out.println("  cgtruong  – Chuyên gia trưởng: thẩm tra hồ sơ và năng lực");
+        System.out.println("  → Xem: Năng lực → Ma trận năng lực / Định nghĩa năng lực; tab 'Năng lực' trong hồ sơ chuyên gia");
         System.out.println("  gdcn      – Giám đốc chứng nhận: phê duyệt / trả lại, dừng / mở chuyên gia");
         System.out.println("  tpcn      – Trưởng phòng chứng nhận: xem hồ sơ (chỉ đọc)");
         System.out.println("  vanphong  – Văn phòng: nhập thông tin nhân sự, tải lên / xác minh tài liệu");
@@ -354,6 +364,99 @@ public final class DemoDataSeeder {
         } catch (java.io.IOException ex) {
             throw new IllegalStateException(ex);
         }
+    }
+
+    // ================================================================ năng lực
+
+    private final Map<String, UUID> stdId = new HashMap<>();
+    private final Map<String, UUID> roleId = new HashMap<>();
+    /** khoá "ISO 9001|17|AU" (code "*" = toàn tiêu chuẩn) → id định nghĩa năng lực */
+    private final Map<String, UUID> defId = new HashMap<>();
+
+    private void competencyDefinitions() {
+        admin.standards(null).forEach(st -> stdId.put(st.standardCode(), st.id()));
+        admin.assessmentRoles().forEach(r -> roleId.put(r.roleCode(), r.id()));
+        LocalDate from = LocalDate.of(2024, 1, 1);
+        var la = criteria("BACHELOR", 4, 4, "Khoá Lead Auditor được công nhận (IRCA/Exemplar Global)");
+        var au = criteria("BACHELOR", 2, 2, "Khoá đánh giá viên / Lead Auditor");
+        var auCode = criteria("BACHELOR", 2, 2, "Kinh nghiệm làm việc trong lĩnh vực của code");
+        var te = criteria("ENGINEER", 5, null, "Chuyên môn sâu trong lĩnh vực của code");
+        for (String std : stdId.keySet()) {
+            bulk(std, "LA", List.of(), true, (short) 36, from, la);
+            bulk(std, "AU", List.of(), true, (short) 36, from, au);
+        }
+        for (String std : List.of("ISO 9001", "ISO 14001")) {
+            List<UUID> codeIds = codesOfStandard(std);
+            bulk(std, "AU", codeIds, false, (short) 36, from, auCode);
+            bulk(std, "TE", codeIds, false, (short) 36, from, te);
+        }
+        for (var d : admin.activeCompetencyDefinitions(null)) {
+            defId.put(d.standardCode() + "|" + (d.codeValue() == null ? "*" : d.codeValue()) + "|" + d.roleCode(), d.id());
+        }
+    }
+
+    private void bulk(String std, String role, List<UUID> codeIds, boolean general, short months, LocalDate from,
+                      com.fasterxml.jackson.databind.JsonNode criteria) {
+        admin.createCompetencyDefinitionsBulk(new com.npcore.ems.desktop.api.Dtos.BulkDefinitionRequest(stdId.get(std),
+                roleId.get(role), codeIds, general, months, from, "1", criteria));
+    }
+
+    private List<UUID> codesOfStandard(String std) {
+        var st = admin.standards(null).stream().filter(s -> s.standardCode().equals(std)).findFirst().orElseThrow();
+        List<UUID> ids = new ArrayList<>();
+        for (var set : admin.codeSets(st.schemeId())) {
+            if ("ACTIVE".equals(set.status())) admin.codes(set.id()).forEach(c -> ids.add(c.id()));
+        }
+        return ids;
+    }
+
+    private static com.fasterxml.jackson.databind.JsonNode criteria(String degree, Integer years, Integer audits, String training) {
+        var n = com.npcore.ems.desktop.api.Json.MAPPER.createObjectNode();
+        n.put("minDegreeLevel", degree);
+        if (years != null) n.put("minYearsExperience", years);
+        if (audits != null) n.put("minAudits", audits);
+        n.put("requiredTraining", training);
+        return n;
+    }
+
+    private void expertCompetencies() {
+        LocalDate today = LocalDate.now();
+        // Đã phê duyệt
+        approved("Nguyễn Văn An", "ISO 9001|*|LA", "ISO 9001|17|AU", "ISO 9001|18|AU", "ISO 9001|19|AU", "ISO 14001|*|AU");
+        approved("Trần Thị Bình", "ISO 22000|*|LA", "ISO 9001|03|AU", "ISO 9001|30|AU");
+        approved("Lê Hoàng Cường", "ISO 9001|28|TE", "ISO 9001|16|TE");          // 28 → 28.1, 28.2 (code cha bao con)
+        approved("Phạm Minh Đức", "ISO 9001|*|LA", "ISO 9001|29|AU", "ISO 9001|31|AU", "ISO 45001|*|AU");
+        approved("Hoàng Thị Em", "ISO 14001|12|AU", "ISO 14001|14|AU");         // chuyên gia đang tạm dừng
+        // Sắp hết hạn (còn 30 ngày) và đã hết hạn
+        competency("Phạm Minh Đức", "ISO 9001|33|AU", today.minusYears(3).plusDays(30), today.plusDays(30), "APPROVE");
+        competency("Nguyễn Văn An", "ISO 9001|25|AU", today.minusYears(4), today.minusDays(20), "APPROVE");
+        // Đang trong quy trình
+        competency("Đặng Thu Giang", "ISO 9001|29|AU", null, null, "SUBMIT");
+        competency("Bùi Văn Hải", "ISO 9001|12|TE", null, null, "START_REVIEW");
+        competency("Ngô Thị Lan", "ISO 22000|*|AU", null, null, null);
+    }
+
+    private void approved(String expert, String... keys) {
+        for (String k : keys) competency(expert, k, null, null, "APPROVE");
+    }
+
+    /** NV hồ sơ đăng ký + minh chứng; đi quy trình tới bước 'until': SUBMIT (hang) → START_REVIEW (cgtruong) → APPROVE (gdcn). */
+    private void competency(String expertName, String key, LocalDate from, LocalDate to, String until) {
+        UUID expertId = hang.experts(expertName, null, null, null, 0, 1, null).content().get(0).id();
+        UUID def = defId.get(key);
+        if (def == null) throw new IllegalStateException("Thiếu định nghĩa năng lực " + key);
+        var ec = hang.addExpertCompetency(expertId, new com.npcore.ems.desktop.api.Dtos.ExpertCompetencyRequest(def, null, null,
+                null, null, key.endsWith("|LA") ? "SENIOR" : "QUALIFIED", from, to, null));
+        hang.addCompetencyEvidence(expertId, ec.id(), new com.npcore.ems.desktop.api.Dtos.EvidenceRequest(null, "EXPERIENCE",
+                null, null, "Kinh nghiệm làm việc và số cuộc đánh giá theo hồ sơ"));
+        hang.addCompetencyEvidence(expertId, ec.id(), new com.npcore.ems.desktop.api.Dtos.EvidenceRequest(null, "CERTIFICATE",
+                null, null, "Chứng chỉ đánh giá viên còn hiệu lực"));
+        if (until == null) return;
+        hang.transitionExpertCompetency(expertId, ec.id(), "SUBMIT", "Đủ minh chứng");
+        if (until.equals("SUBMIT")) return;
+        cgtruong.transitionExpertCompetency(expertId, ec.id(), "START_REVIEW", null);
+        if (until.equals("START_REVIEW")) return;
+        gdcn.transitionExpertCompetency(expertId, ec.id(), "APPROVE", "Đồng ý");
     }
 
     /** PDF 1 trang tối giản (chữ không dấu). */

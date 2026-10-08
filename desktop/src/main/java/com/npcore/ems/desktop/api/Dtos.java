@@ -14,13 +14,22 @@ public final class Dtos {
 
     // ---------------- Auth
     public record Me(UUID id, String username, String fullName, String email, List<String> roles,
-                     List<String> permissions, UUID expertId) {}
+                     List<String> permissions, UUID expertId, boolean mustChangePassword) {}
 
     public record TokenResponse(String accessToken, String refreshToken, long expiresIn, Me user) {}
 
     public record ImportResult(int total, int imported, int skipped, List<RowError> errors) {
         public record RowError(int row, String message) {}
     }
+
+    /** Import hồ sơ chuyên gia: thêm cảnh báo (không chặn dòng) và tài khoản đã tạo kèm mật khẩu tạm. */
+    public record ExpertImportResult(int total, int imported, int skipped, List<ImportResult.RowError> errors,
+                                     List<ImportResult.RowError> warnings, List<CreatedAccount> accounts) {
+        public ImportResult basic() { return new ImportResult(total, imported, skipped, errors); }
+    }
+
+    public record CreatedAccount(int row, String expertCode, String fullName, String username, String email,
+                                 String tempPassword) {}
 
     // ---------------- Users / roles
     public record User(UUID id, String username, String email, String fullName, UUID departmentId,
@@ -195,10 +204,23 @@ public final class Dtos {
 
     public record CompetencyActionRequest(String action, String comment) {}
 
+    public record BulkDefinitionRequest(UUID standardId, UUID assessmentRoleId, List<UUID> codeIds, boolean includeGeneral,
+                                        Short defaultValidityMonths, LocalDate effectiveFrom, String version,
+                                        JsonNode criteria) {}
+
+    public record BulkResult(int created, int skipped) {}
+
+    /** codeValue "*" = năng lực toàn tiêu chuẩn. */
+    public record MatrixColumn(UUID codeId, String codeValue, String codeName, String parentCode) {}
+
     public record MatrixCell(UUID competencyId, UUID definitionId, String standardCode, String codeValue,
                             String roleCode, String level, String status, LocalDate effectiveFrom,
-                            LocalDate effectiveTo) {}
+                            LocalDate effectiveTo, boolean expired, boolean expiringSoon, boolean inherited) {}
 
     public record MatrixRow(UUID expertId, String expertCode, String expertName, String expertType,
-                            String employmentType, List<MatrixCell> cells) {}
+                            String employmentType, String expertStatus, LocalDate suspendedUntil,
+                            List<MatrixCell> cells) {}
+
+    public record MatrixResponse(UUID standardId, String standardCode, String standardName, boolean parentCoversChild,
+                                 List<MatrixColumn> columns, List<MatrixRow> rows) {}
 }

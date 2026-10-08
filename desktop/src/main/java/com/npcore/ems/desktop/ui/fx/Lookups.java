@@ -75,6 +75,12 @@ public record Lookups(List<Department> departments, List<Location> locations, Li
                 schemeOfCodeSet.getOrDefault(c.codeSetId(), "") + " · " + c.codeValue() + " – " + c.codeName())).toList();
     }
 
+    /** Code đang hiệu lực thuộc bộ mã của scheme (theo mã scheme), giữ thứ tự cây. */
+    public List<Code> codesOfScheme(String schemeCode) {
+        return activeCodes.stream().filter(c -> java.util.Objects.equals(schemeOfCodeSet.get(c.codeSetId()), schemeCode))
+                .sorted(java.util.Comparator.comparing(c -> c.path() == null ? c.codeValue() : c.path())).toList();
+    }
+
     public boolean requiresExpiry(String typeCode) {
         return documentTypes.stream().anyMatch(t -> t.code().equals(typeCode) && t.requiresExpiry());
     }

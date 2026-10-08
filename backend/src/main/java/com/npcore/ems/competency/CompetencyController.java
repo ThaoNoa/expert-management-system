@@ -42,9 +42,11 @@ public class CompetencyController {
     public PageResponse<CompetencyDefinitionDto> listDefinitions(
             @RequestParam(required = false) UUID schemeId,
             @RequestParam(required = false) UUID standardId,
+            @RequestParam(required = false) UUID roleId,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q,
             @PageableDefault(size = 20) Pageable pageable) {
-        return definitionService.list(schemeId, standardId, status, pageable);
+        return definitionService.list(schemeId, standardId, roleId, status, q, pageable);
     }
 
     @GetMapping("/competency-definitions/active")
@@ -63,6 +65,12 @@ public class CompetencyController {
     @PreAuthorize("hasAuthority('MASTER_DATA_MANAGE')")
     public CompetencyDefinitionDto createDefinition(@RequestBody @Valid CompetencyDefinitionRequest req) {
         return definitionService.create(req);
+    }
+
+    @PostMapping("/competency-definitions/bulk")
+    @PreAuthorize("hasAuthority('MASTER_DATA_MANAGE')")
+    public CompetencyDtos.BulkResult createDefinitionsBulk(@RequestBody @Valid CompetencyDtos.BulkDefinitionRequest req) {
+        return definitionService.createBulk(req);
     }
 
     @PutMapping("/competency-definitions/{id}")
@@ -100,7 +108,7 @@ public class CompetencyController {
 
     @PostMapping("/experts/{expertId}/competencies")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('EXPERT_EDIT')")
+    @PreAuthorize("hasAuthority('EXPERT_COMPETENCY_EDIT')")
     public ExpertCompetencyDto addCompetency(
             @PathVariable UUID expertId,
             @RequestBody @Valid ExpertCompetencyRequest req) {
@@ -125,7 +133,7 @@ public class CompetencyController {
 
     @PostMapping("/experts/{expertId}/competencies/{id}/evidences")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('EXPERT_EDIT')")
+    @PreAuthorize("hasAuthority('EXPERT_COMPETENCY_EDIT')")
     public EvidenceDto addEvidence(
             @PathVariable UUID expertId,
             @PathVariable UUID id,
@@ -135,7 +143,7 @@ public class CompetencyController {
 
     @DeleteMapping("/experts/{expertId}/competencies/{id}/evidences/{evidenceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAuthority('EXPERT_EDIT')")
+    @PreAuthorize("hasAuthority('EXPERT_COMPETENCY_EDIT')")
     public void removeEvidence(
             @PathVariable UUID expertId,
             @PathVariable UUID id,
@@ -147,7 +155,9 @@ public class CompetencyController {
 
     @GetMapping("/competency-matrix")
     @PreAuthorize("hasAuthority('EXPERT_VIEW')")
-    public List<MatrixRow> getMatrix(@RequestParam(required = false) UUID standardId) {
-        return expertCompetencyService.getMatrix(standardId);
+    public CompetencyDtos.MatrixResponse getMatrix(@RequestParam UUID standardId,
+                                                   @RequestParam(required = false) UUID roleId,
+                                                   @RequestParam(defaultValue = "false") boolean includeExpired) {
+        return expertCompetencyService.getMatrix(standardId, roleId, includeExpired);
     }
 }

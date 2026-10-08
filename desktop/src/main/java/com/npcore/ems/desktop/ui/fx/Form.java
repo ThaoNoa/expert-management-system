@@ -299,6 +299,11 @@ public final class Form {
     }
 
     public <T> void showDialog(String title, String okText, Callable<T> submit, Consumer<T> onDone) {
+        showDialog(title, okText, submit, onDone, null);
+    }
+
+    /** Như trên; onCancel chạy khi hộp thoại đóng mà chưa lưu thành công (Huỷ / nút X). */
+    public <T> void showDialog(String title, String okText, Callable<T> submit, Consumer<T> onDone, Runnable onCancel) {
         Dialog<ButtonType> d = new Dialog<>();
         Dialogs.init(d, title);
         ScrollPane sp = new ScrollPane(node());
@@ -323,6 +328,9 @@ public final class Form {
                 d.close();
                 onDone.accept(result);
             }, this::showError);
+        });
+        if (onCancel != null) d.setOnHidden(e -> {
+            if (d.getResult() != ok) onCancel.run();
         });
         d.show();
     }

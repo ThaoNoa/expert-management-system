@@ -487,6 +487,11 @@ public final class ExpertDetailView extends BorderPane {
         return pane;
     }
 
+    /** Năng lực theo tiêu chuẩn / code có quy trình duyệt riêng – không khoá theo trạng thái hồ sơ. */
+    private boolean canManageCompetency() {
+        return session.has("EXPERT_COMPETENCY_EDIT") && !"INACTIVE".equals(expert.status());
+    }
+
     private Node competencies() {
         TableView<ExpertCompetency> table = Tables.table("Chuyên gia chưa đăng ký năng lực nào");
         table.getColumns().addAll(List.of(
@@ -507,7 +512,7 @@ public final class ExpertDetailView extends BorderPane {
 
         HBox bar = Ui.toolbar(Ui.button("Tải lại", loader), Ui.spacer());
 
-        if (canEdit()) {
+        if (canManageCompetency()) {
             Button add = Ui.primary("+ Đăng ký năng lực", () -> openAddCompetencyDialog(loader));
             bar.getChildren().add(add);
         }
@@ -523,7 +528,7 @@ public final class ExpertDetailView extends BorderPane {
                             : Ui.button(Fmt.label(act), () -> runCompetencyAction(sel, act, loader));
                     actionsBar.getChildren().add(b);
                 }
-                if (List.of("DRAFT", "NEED_REVISION").contains(sel.status()) && canEdit()) {
+                if (List.of("DRAFT", "NEED_REVISION").contains(sel.status()) && canManageCompetency()) {
                     Button addEv = Ui.button("+ Thêm minh chứng", () -> openAddEvidenceDialog(sel, loader));
                     actionsBar.getChildren().add(addEv);
                 }
@@ -537,68 +542,41 @@ public final class ExpertDetailView extends BorderPane {
         return box;
     }
 
+    /** Đăng ký năng lực: chọn tiêu chuẩn → chọn định nghĩa năng lực (code + vai trò) có trong danh mục. */
     private void openAddCompetencyDialog(Runnable onDone) {
-        Async.run(this, () -> {
-            var stList = api.list("standards", new TypeReference<List<com.npcore.ems.desktop.api.Dtos.Standard>>() {});
-            var cdList = api.list("codes", new TypeReference<List<com.npcore.ems.desktop.api.Dtos.Code>>() {});
-            var roList = api.list("assessment-roles", new TypeReference<List<com.npcore.ems.desktop.api.Dtos.AssessmentRole>>() {});
-            return new Object[] {stList, cdList, roList};
-        }, r -> {
-            var stList = (List<com.npcore.ems.desktop.api.Dtos.Standard>) r[0];
-            var cdList = (List<com.npcore.ems.desktop.api.Dtos.Code>) r[1];
-            var roList = (List<com.npcore.ems.desktop.api.Dtos.AssessmentRole>) r[2];
-
-            if (stList.isEmpty()) {
-                Dialogs.info("Chưa có Tiêu chuẩn nào trong hệ thống");
+        Async.run(this, () -> api.activeCompetencyDefinitions(null), defs -> {
+            if (defs.isEmpty()) {
+                Dialogs.info("Chưa có định nghĩa năng lực nào đang hiệu lực. Hãy tạo ở mục Năng lực → Định nghĩa năng lực.");
                 return;
             }
-
-            List<Option<UUID>> stdOptions = stList.stream()
-                    .map(s -> new Option<>(s.id(), s.standardCode() + " · " + s.standardName())).toList();
-
-            List<Option<UUID>> codeOptions = new ArrayList<>();
-            codeOptions.add(new Option<>(null, "— Toàn tiêu chuẩn (Áp dụng chung / LA) —"));
-            for (var c : cdList) {
-                codeOptions.add(new Option<>(c.id(), "Code " + c.codeValue() + " · " + c.codeName()));
-            }
-
-            List<Option<UUID>> roleOptions = roList.stream()
-                    .map(ro -> new Option<>(ro.id(), ro.roleCode() + " · " + ro.roleName())).toList();
-
-            List<Option<String>> levelOptions = List.of(
-                    new Option<>("QUALIFIED", "Đạt chuẩn (Qualified)"),
-                    new Option<>("IN_TRAINING", "Đang đào tạo (In Training)"),
-                    new Option<>("SENIOR", "Chuyên gia cao cấp (Senior)")
-            );
-
+            java.util.Map<UUID, String> stdLabels = new java.util.LinkedHashMap<>();
+            defs.stream().sorted(java.util.Comparator.comparing(CompetencyDefinition::standardCode))
+                    .forEach(d -> stdLabels.putIfAbsent(d.standardId(), d.standardCode() + " – " + d.standardName()));
+            List<Option<UUID>> stdOptions = stdLabels.entrySet().stream().map(e -> new Option<>(e.getKey(), e.getValue())).toList();
+            List<Option<String>> levelOptions = List.of(new Option<>("QUALIFIED", "Đạt"),
+                    new Option<>("IN_TRAINING", "Đang đào tạo"), new Option<>("SENIOR", "Cao cấp"));
             Form f = new Form()
-                    .choice("std", "Tiêu chuẩn đánh giá", stdOptions, true)
-                    .choice("code", "Mã ngành / Lĩnh vực (Code)", codeOptions, false)
-                    .choice("role", "Vai trò trong đoàn", roleOptions, true)
-                    .choice("level", "Cấp độ năng lực", levelOptions, true)
+                    .choice("std", "Tiêu chuẩn", stdOptions, true)
+                    .choice("def", "Năng lực (code · vai trò)", List.of(), true)
+                    .choice("level", "Cấp độ", levelOptions, true)
                     .date("from", "Hiệu lực từ", false)
                     .date("to", "Hiệu lực đến", false)
-                    .area("notes", "Ghi chú", false);
-
+                    .area("notes", "Ghi chú", false)
+                    .note("Để trống ngày hiệu lực: khi GĐCN phê duyệt, năng lực có hiệu lực từ ngày duyệt trong thời hạn của định nghĩa.");
+            @SuppressWarnings("unchecked") javafx.scene.control.ComboBox<Option<UUID>> std =
+                    (javafx.scene.control.ComboBox<Option<UUID>>) f.control("std");
+            @SuppressWarnings("unchecked") javafx.scene.control.ComboBox<Option<UUID>> def =
+                    (javafx.scene.control.ComboBox<Option<UUID>>) f.control("def");
+            std.setOnAction(e -> def.getItems().setAll(defs.stream()
+                    .filter(d -> std.getValue() != null && d.standardId().equals(std.getValue().value()))
+                    .map(d -> new Option<>(d.id(), (d.codeValue() == null ? "★ Toàn tiêu chuẩn" : "Code " + d.codeValue() + " – " + d.codeName())
+                            + "  ·  " + d.roleCode() + " (" + d.roleName() + ")")).toList()));
             f.set("level", "QUALIFIED");
-            if (!stdOptions.isEmpty()) f.set("std", stdOptions.get(0).value());
-            if (!roleOptions.isEmpty()) f.set("role", roleOptions.get(0).value());
-
-            f.showDialog("Đăng ký năng lực chuyên gia", "Lưu dự thảo", () -> {
-                ExpertCompetencyRequest req = new ExpertCompetencyRequest(
-                        null,
-                        f.value("std"),
-                        f.value("code"),
-                        f.value("role"),
-                        null,
-                        f.value("level"),
-                        f.date("from"),
-                        f.date("to"),
-                        f.str("notes")
-                );
-                api.addExpertCompetency(expert.id(), req);
-                return Boolean.TRUE;
-            }, ok -> onDone.run());
+            std.getSelectionModel().selectFirst();
+            std.getOnAction().handle(null);
+            f.showDialog("Đăng ký năng lực – " + expert.expertCode() + " · " + expert.fullName(), "Lưu nháp", () ->
+                    api.addExpertCompetency(expert.id(), new ExpertCompetencyRequest(f.value("def"), null, null, null, null,
+                            f.value("level"), f.date("from"), f.date("to"), f.str("notes"))), ok -> onDone.run());
         });
     }
 

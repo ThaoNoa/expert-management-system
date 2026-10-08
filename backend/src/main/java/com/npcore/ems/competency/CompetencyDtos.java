@@ -101,7 +101,27 @@ public final class CompetencyDtos {
             List<String> availableActions,
             List<EvidenceDto> evidences) {}
 
-    // ---- Competency Matrix (tra cứu chéo chuyên gia x năng lực)
+    // ---- Tạo hàng loạt định nghĩa năng lực (một tiêu chuẩn + một vai trò + nhiều code)
+    public record BulkDefinitionRequest(
+            @NotNull UUID standardId,
+            @NotNull UUID assessmentRoleId,
+            List<UUID> codeIds,
+            boolean includeGeneral,
+            Short defaultValidityMonths,
+            @NotNull LocalDate effectiveFrom,
+            String version,
+            JsonNode criteria) {}
+
+    public record BulkResult(int created, int skipped) {}
+
+    // ---- Competency Matrix (dòng = chuyên gia, cột = code của tiêu chuẩn)
+    /** Cột ma trận: codeValue "*" = năng lực toàn tiêu chuẩn (không theo code, VD Lead Auditor). */
+    public record MatrixColumn(UUID codeId, String codeValue, String codeName, String parentCode) {}
+
+    /**
+     * Ô ma trận. inherited = có được nhờ code cha (scheme bật "code cha bao code con");
+     * expired = đã quá ngày hiệu lực; expiringSoon = còn ≤ 60 ngày.
+     */
     public record MatrixCell(
             UUID competencyId,
             UUID definitionId,
@@ -111,7 +131,10 @@ public final class CompetencyDtos {
             String level,
             String status,
             LocalDate effectiveFrom,
-            LocalDate effectiveTo) {}
+            LocalDate effectiveTo,
+            boolean expired,
+            boolean expiringSoon,
+            boolean inherited) {}
 
     public record MatrixRow(
             UUID expertId,
@@ -119,5 +142,15 @@ public final class CompetencyDtos {
             String expertName,
             String expertType,
             String employmentType,
+            String expertStatus,
+            LocalDate suspendedUntil,
             List<MatrixCell> cells) {}
+
+    public record MatrixResponse(
+            UUID standardId,
+            String standardCode,
+            String standardName,
+            boolean parentCoversChild,
+            List<MatrixColumn> columns,
+            List<MatrixRow> rows) {}
 }

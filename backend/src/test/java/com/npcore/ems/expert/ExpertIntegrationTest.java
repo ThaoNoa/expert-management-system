@@ -488,4 +488,50 @@ class ExpertIntegrationTest extends AbstractIntegrationTest {
         assertThat(template.getBody()).contains(String.join(",", ExpertImportService.COLUMNS));
         expectError(uploadMultipart("/experts/import", director.token(), "experts.csv", csv), HttpStatus.FORBIDDEN, "FORBIDDEN");
     }
+
+    @Test
+    void importCanCreateExpertAccountsWithTemporaryPassword() {
+        String tag = uniq("acc");
+        String cols = String.join(",", ExpertImportService.COLUMNS) + "\n";
+        String csv = cols
+                + ",Ngô Tài Khoản " + tag + ",,,,,,Tk." + tag + "@x.vn,CGĐG,FULLTIME,,,,\n"          // tự sinh từ email
+                + ",Bùi Đặt Tên " + tag + ",,,,,,b" + tag + "@x.vn,CGKT,PARTTIME,,,,u" + tag + "\n"  // username tự đặt
+                + ",Không Email " + tag + ",,,,,,,CGKT,PARTTIME,,,,\n"                                  // cảnh báo, vẫn nhập
+                + ",Trùng Tên " + tag + ",,,,,,c" + tag + "@x.vn,CGKT,PARTTIME,,,,u" + tag + "\n";     // username lặp
+        JsonNode r = expect(uploadMultipart("/experts/import", manager.token(), "acc.csv",
+                csv.getBytes(java.nio.charset.StandardCharsets.UTF_8), Map.of("createAccounts", true)), HttpStatus.OK);
+        assertThat(r.path("imported").asInt()).isEqualTo(4);
+        assertThat(r.path("errors")).isEmpty();
+        assertThat(r.path("accounts")).hasSize(2);
+        assertThat(r.path("warnings")).hasSize(2);
+        assertThat(r.path("warnings").get(0).path("row").asInt()).isEqualTo(4);
+        assertThat(r.path("warnings").get(1).path("message").asText()).contains("lặp");
+
+        JsonNode auto = r.path("accounts").get(0);
+        assertThat(auto.path("username").asText()).isEqualTo("tk." + tag);
+        String temp = auto.path("tempPassword").asText();
+        assertThat(temp).hasSize(10).matches(".*[A-Z].*").matches(".*[a-z].*").matches(".*\\d.*");
+
+        // đăng nhập bằng mật khẩu tạm: bị yêu cầu đổi, chỉ thấy hồ sơ của mình
+        JsonNode login = loginJson("tk." + tag, temp);
+        assertThat(login.path("user").path("mustChangePassword").asBoolean()).isTrue();
+        assertThat(login.path("user").path("roles").get(0).asText()).isEqualTo("EXPERT");
+        assertThat(login.path("user").path("expertId").asText()).isNotBlank();
+        String token = login.path("accessToken").asText();
+        expect(post("/auth/change-password", token, Map.of("currentPassword", temp, "newPassword", temp)),
+                HttpStatus.BAD_REQUEST);
+        expect(post("/auth/change-password", token, Map.of("currentPassword", temp, "newPassword", "M0i!matkhau")),
+                HttpStatus.NO_CONTENT);
+        assertThat(loginJson("tk." + tag, "M0i!matkhau").path("user").path("mustChangePassword").asBoolean()).isFalse();
+
+        assertThat(r.path("accounts").get(1).path("username").asText()).isEqualTo("u" + tag);
+
+        // import lại cùng email: không tạo tài khoản thứ hai
+        JsonNode again = expect(uploadMultipart("/experts/import", manager.token(), "acc2.csv",
+                (cols + ",Lặp Lại " + tag + ",,,,,,tk." + tag + "@x.vn,CGĐG,FULLTIME,,,,\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8), Map.of("createAccounts", true)), HttpStatus.OK);
+        assertThat(again.path("imported").asInt()).isEqualTo(1);
+        assertThat(again.path("accounts")).isEmpty();
+        assertThat(again.path("warnings").get(0).path("message").asText()).contains("đã có tài khoản");
+    }
 }

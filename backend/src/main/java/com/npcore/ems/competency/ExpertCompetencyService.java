@@ -73,42 +73,26 @@ public class ExpertCompetencyService {
         return toDto(ec);
     }
 
+    /**
+     * Đăng ký năng lực cho chuyên gia: BẮT BUỘC chọn từ danh mục định nghĩa năng lực đang hiệu lực
+     * (theo id, hoặc theo tổ hợp tiêu chuẩn + code + vai trò). Không tự tạo định nghĩa mới.
+     */
     @Transactional
     public ExpertCompetencyDto add(UUID expertId, ExpertCompetencyRequest req) {
-        Expert expert = access.requireEdit(expertId);
+        Expert expert = access.requireCompetencyManage(expertId);
+        if ("INACTIVE".equals(expert.getStatus())) {
+            throw ApiException.businessRule("Chuyên gia đã ngừng hoạt động – không đăng ký năng lực mới");
+        }
         CompetencyDefinition def;
         if (req.competencyDefinitionId() != null) {
             def = definitions.findById(req.competencyDefinitionId())
-                    .orElseThrow(() -> ApiException.notFound("CompetencyDefinition", req.competencyDefinitionId()));
+                    .orElseThrow(() -> ApiException.notFound("Định nghĩa năng lực", req.competencyDefinitionId()));
         } else if (req.standardId() != null && req.assessmentRoleId() != null) {
-            Standard std = standards.findById(req.standardId())
-                    .orElseThrow(() -> ApiException.notFound("Standard", req.standardId()));
-            AssessmentRole role = assessmentRoles.findById(req.assessmentRoleId())
-                    .orElseThrow(() -> ApiException.notFound("AssessmentRole", req.assessmentRoleId()));
-            Code code = req.codeId() != null ? codes.findById(req.codeId()).orElse(null) : null;
-
-            UUID codeId = code != null ? code.getId() : null;
-            def = definitions.findAll().stream()
-                    .filter(d -> d.getStandard().getId().equals(std.getId())
-                            && Objects.equals(d.getCode() != null ? d.getCode().getId() : null, codeId)
-                            && d.getAssessmentRole().getId().equals(role.getId())
-                            && !"RETIRED".equals(d.getStatus()))
-                    .findFirst()
-                    .orElseGet(() -> {
-                        CompetencyDefinition cd = new CompetencyDefinition();
-                        cd.setScheme(std.getScheme());
-                        cd.setStandard(std);
-                        cd.setCode(code);
-                        cd.setAssessmentRole(role);
-                        cd.setDefaultValidityMonths((short) 36);
-                        cd.setEffectiveFrom(LocalDate.now());
-                        cd.setStatus("ACTIVE");
-                        cd.setVersion("1.0");
-                        cd.setCriteria(objectMapper.createObjectNode());
-                        return definitions.save(cd);
-                    });
+            def = definitions.findActiveFor(req.standardId(), req.codeId(), req.assessmentRoleId()).stream().findFirst()
+                    .orElseThrow(() -> ApiException.businessRule(
+                            "Chưa có định nghĩa năng lực cho tổ hợp này – hãy tạo ở mục Năng lực → Định nghĩa năng lực"));
         } else {
-            throw ApiException.badRequest("Cần chọn Tiêu chuẩn và Vai trò đánh giá");
+            throw ApiException.badRequest("Chọn định nghĩa năng lực");
         }
 
         if (!"ACTIVE".equals(def.getStatus())) {
@@ -144,6 +128,7 @@ public class ExpertCompetencyService {
     public ExpertCompetencyDto transition(UUID id, CompetencyActionRequest req) {
         ExpertCompetency ec = repository.findByIdWithDetails(id)
                 .orElseThrow(() -> ApiException.notFound("ExpertCompetency", id));
+        access.requireView(ec.getExpert().getId());
         CurrentUser user = SecurityUtils.currentUser();
 
         Map<String, UUID> actors = new HashMap<>();
@@ -201,7 +186,7 @@ public class ExpertCompetencyService {
     public EvidenceDto addEvidence(UUID expertCompetencyId, EvidenceRequest req) {
         ExpertCompetency ec = repository.findById(expertCompetencyId)
                 .orElseThrow(() -> ApiException.notFound("ExpertCompetency", expertCompetencyId));
-        access.requireEdit(ec.getExpert().getId());
+        access.requireCompetencyManage(ec.getExpert().getId());
 
         if (!List.of("DRAFT", "NEED_REVISION").contains(ec.getStatus())) {
             throw ApiException.businessRule("Chỉ có thể bổ sung bằng chứng khi hồ sơ năng lực ở trạng thái DRAFT hoặc NEED_REVISION");
@@ -225,7 +210,7 @@ public class ExpertCompetencyService {
         CompetencyEvidence e = evidences.findById(evidenceId)
                 .orElseThrow(() -> ApiException.notFound("CompetencyEvidence", evidenceId));
         ExpertCompetency ec = e.getExpertCompetency();
-        access.requireEdit(ec.getExpert().getId());
+        access.requireCompetencyManage(ec.getExpert().getId());
 
         if (!List.of("DRAFT", "NEED_REVISION").contains(ec.getStatus())) {
             throw ApiException.businessRule("Không thể xóa bằng chứng khi hồ sơ đã nộp hoặc đã phê duyệt");
@@ -235,33 +220,67 @@ public class ExpertCompetencyService {
         audit.record("REMOVE_EVIDENCE", "COMPETENCY", expertCompetencyId, evidenceId, null, "Xóa minh chứng năng lực");
     }
 
+    /**
+     * Ma trận năng lực của MỘT tiêu chuẩn: cột = năng lực toàn tiêu chuẩn ("*") + các code có định nghĩa năng lực;
+     * dòng = chuyên gia (trừ Ngừng hoạt động) có ít nhất một năng lực đã duyệt.
+     * Scheme bật "code cha bao code con" → code con được hiển thị là kế thừa từ code cha.
+     */
     @Transactional(readOnly = true)
-    public List<MatrixRow> getMatrix(UUID standardId) {
-        if (standardId == null) {
-            return Collections.emptyList();
+    public CompetencyDtos.MatrixResponse getMatrix(UUID standardId, UUID roleId, boolean includeExpired) {
+        Standard std = standards.findById(standardId).orElseThrow(() -> ApiException.notFound("Tiêu chuẩn", standardId));
+        boolean parentCovers = std.getScheme().isParentCoversChild();
+        LocalDate today = LocalDate.now();
+
+        // Cột: code có định nghĩa năng lực đang hiệu lực cho tiêu chuẩn (sắp theo path), "*" đầu tiên
+        List<CompetencyDefinition> defs = definitions.findByStandardIdWithDetails(standardId, "ACTIVE");
+        Map<UUID, Code> codeById = new java.util.TreeMap<>();
+        Map<String, Code> byPath = new java.util.TreeMap<>();
+        for (CompetencyDefinition d : defs) if (d.getCode() != null) byPath.put(d.getCode().getPath() + " " + d.getCode().getId(), d.getCode());   // cha trước con
+        List<CompetencyDtos.MatrixColumn> columns = new ArrayList<>();
+        columns.add(new CompetencyDtos.MatrixColumn(null, "*", "Toàn tiêu chuẩn", null));
+        Map<UUID, String> valueById = new HashMap<>();
+        byPath.values().forEach(c -> valueById.put(c.getId(), c.getValue()));
+        for (Code c : byPath.values()) {
+            String parent = c.getParentId() == null ? null
+                    : valueById.getOrDefault(c.getParentId(), codes.findById(c.getParentId()).map(Code::getValue).orElse(null));
+            columns.add(new CompetencyDtos.MatrixColumn(c.getId(), c.getValue(), c.getName(), parent));
         }
-        List<ExpertCompetency> list = repository.findApprovedByStandardId(standardId);
 
-        Map<UUID, MatrixRow> rowMap = new HashMap<>();
-        for (ExpertCompetency ec : list) {
-            Expert exp = ec.getExpert();
-            MatrixRow row = rowMap.computeIfAbsent(exp.getId(), k -> new MatrixRow(
-                    exp.getId(), exp.getCode(), exp.getFullName(), exp.getExpertType(),
-                    exp.getEmploymentType(), new ArrayList<>()));
-
+        Map<UUID, MatrixRow> rowMap = new java.util.LinkedHashMap<>();
+        for (ExpertCompetency ec : repository.findApprovedByStandardId(standardId)) {
             CompetencyDefinition cd = ec.getCompetencyDefinition();
-            row.cells().add(new MatrixCell(
-                    ec.getId(),
-                    cd.getId(),
-                    cd.getStandard().getCode(),
-                    cd.getCode() != null ? cd.getCode().getValue() : "*",
-                    cd.getAssessmentRole().getCode(),
-                    ec.getCompetencyLevel(),
-                    ec.getStatus(),
-                    ec.getEffectiveFrom(),
-                    ec.getEffectiveTo()));
+            if (roleId != null && !roleId.equals(cd.getAssessmentRole().getId())) continue;
+            Expert exp = ec.getExpert();
+            if ("INACTIVE".equals(exp.getStatus()) || exp.getDeletedAt() != null) continue;
+            boolean expired = ec.getEffectiveTo() != null && ec.getEffectiveTo().isBefore(today);
+            if (expired && !includeExpired) continue;
+            boolean soon = !expired && ec.getEffectiveTo() != null && !ec.getEffectiveTo().isAfter(today.plusDays(60));
+            MatrixRow row = rowMap.computeIfAbsent(exp.getId(), k -> new MatrixRow(
+                    exp.getId(), exp.getCode(), exp.getFullName(), exp.getExpertType(), exp.getEmploymentType(),
+                    exp.getStatus(), exp.getSuspendedUntil(), new ArrayList<>()));
+            row.cells().add(new MatrixCell(ec.getId(), cd.getId(), cd.getStandard().getCode(),
+                    cd.getCode() != null ? cd.getCode().getValue() : "*", cd.getAssessmentRole().getCode(),
+                    ec.getCompetencyLevel(), ec.getStatus(), ec.getEffectiveFrom(), ec.getEffectiveTo(), expired, soon, false));
         }
-        return new ArrayList<>(rowMap.values());
+
+        if (parentCovers) {
+            for (MatrixRow row : rowMap.values()) {
+                List<MatrixCell> extra = new ArrayList<>();
+                for (CompetencyDtos.MatrixColumn col : columns) {
+                    if (col.parentCode() == null) continue;
+                    boolean direct = row.cells().stream().anyMatch(c -> c.codeValue().equals(col.codeValue()));
+                    if (direct) continue;
+                    row.cells().stream().filter(c -> c.codeValue().equals(col.parentCode()) && !c.inherited())
+                            .forEach(c -> extra.add(new MatrixCell(c.competencyId(), c.definitionId(), c.standardCode(),
+                                    col.codeValue(), c.roleCode(), c.level(), c.status(), c.effectiveFrom(), c.effectiveTo(),
+                                    c.expired(), c.expiringSoon(), true)));
+                }
+                row.cells().addAll(extra);
+            }
+        }
+        List<MatrixRow> rows = new ArrayList<>(rowMap.values());
+        rows.sort(java.util.Comparator.comparing(MatrixRow::expertName));
+        return new CompetencyDtos.MatrixResponse(std.getId(), std.getCode(), std.getName(), parentCovers, columns, rows);
     }
 
     public ExpertCompetencyDto toDto(ExpertCompetency ec) {

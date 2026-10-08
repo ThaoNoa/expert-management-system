@@ -55,6 +55,9 @@ public class User {
     private OffsetDateTime lastLoginAt;
     @Column(name = "password_changed_at")
     private OffsetDateTime passwordChangedAt;
+    /** Mật khẩu tạm (import / quản trị đặt lại): bắt đổi ở lần đăng nhập tới. */
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword;
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
     @ManyToMany(fetch = FetchType.LAZY)

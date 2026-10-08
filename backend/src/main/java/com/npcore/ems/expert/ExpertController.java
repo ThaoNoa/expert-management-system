@@ -19,7 +19,6 @@ import com.npcore.ems.expert.ExpertProfileServices.CertificateService;
 import com.npcore.ems.expert.ExpertProfileServices.EducationService;
 import com.npcore.ems.expert.ExpertProfileServices.ExperienceService;
 import com.npcore.ems.expert.ExpertProfileServices.TrainingService;
-import com.npcore.ems.shared.web.ImportResult;
 import com.npcore.ems.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
@@ -93,8 +92,9 @@ public class ExpertController {
 
     @PostMapping(path = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('EXPERT_CREATE') and hasAuthority('EXPERT_COMPETENCY_EDIT')")
-    public ImportResult importFile(@RequestPart("file") MultipartFile file) {
-        return importer.importFile(file);
+    public ExpertImportService.ExpertImportResult importFile(@RequestPart("file") MultipartFile file,
+            @RequestParam(name = "createAccounts", defaultValue = "false") boolean createAccounts) {
+        return importer.importFile(file, createAccounts);
     }
 
     @GetMapping("/{id}")

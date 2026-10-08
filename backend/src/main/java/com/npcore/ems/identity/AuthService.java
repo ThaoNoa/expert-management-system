@@ -40,7 +40,7 @@ public class AuthService {
     private final JdbcTemplate jdbc;
 
     public record MeDto(UUID id, String username, String fullName, String email, List<String> roles,
-                        List<String> permissions, UUID expertId) {}
+                        List<String> permissions, UUID expertId, boolean mustChangePassword) {}
 
     public record TokenResponse(String accessToken, String refreshToken, long expiresIn, MeDto user) {}
 
@@ -106,8 +106,12 @@ public class AuthService {
             throw ApiException.badRequest("Mật khẩu hiện tại không đúng");
         }
         passwordPolicy.check(newPassword);
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw ApiException.badRequest("Mật khẩu mới phải khác mật khẩu hiện tại");
+        }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPasswordChangedAt(OffsetDateTime.now());
+        user.setMustChangePassword(false);
         refreshTokens.revokeAllOfUser(user.getId(), OffsetDateTime.now());
         audit.record("CHANGE_PASSWORD", "USER", user.getId(), null, null, null);
     }
@@ -143,7 +147,7 @@ public class AuthService {
                 "select expert_id from experts where user_id = ? and deleted_at is null", UUID.class, user.getId());
         return new MeDto(user.getId(), user.getUsername(), user.getFullName(), user.getEmail(),
                 user.getRoles().stream().map(Role::getCode).sorted().toList(), List.copyOf(grants),
-                expert.isEmpty() ? null : expert.get(0));
+                expert.isEmpty() ? null : expert.get(0), user.isMustChangePassword());
     }
 
     static String sha256(String value) {
